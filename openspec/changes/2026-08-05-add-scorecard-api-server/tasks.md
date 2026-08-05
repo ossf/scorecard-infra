@@ -84,7 +84,7 @@
 > EXECUTED 2026-08-05 on `fileblob` with a real `scorecard-mcp` binary (stdio,
 > `-base-url`) and a `gh` SCM token — HIT and live-MISS legs pass. See
 > `docs/acceptance.md` for the reproducible runbook and observed results. The
-> MinIO/S3 repeat is still outstanding (no Docker); see 9.3.
+> MinIO/S3 repeat is now covered too, via the Docker Compose dev environment; see 9.3.
 
 - [x] 8.1 Integration test: run the server on `fileblob`; `scorecard-mcp -base-url http://localhost:PORT get_repo_score`
       returns a correct result on a cache HIT — verified via the real MCP binary over stdio (`get_repo_score
@@ -103,10 +103,13 @@
       tests per package; the live-engine and scorecard-mcp-compat scenarios are exercised via the fake seam and
       deferred to group 8 for a real run
 - [x] 9.2 Run `golangci-lint` (0 issues) and `go test ./...` clean — plus `actionlint` and `zizmor` on workflows
-- [ ] 9.3 Smoke test each route against a local `fileblob` bucket and MinIO — PARTIAL: the `fileblob` leg is now fully
-      covered, both offline (`internal/httpapi/integration_test.go`: real HTTP -> orchestrator -> fileblob) and live
-      (group 8, 2026-08-05: real MCP client, live MISS scan, HIT, badge, capabilities, health — see
-      `docs/acceptance.md`). Remaining: the **MinIO/S3 backend** (needs Docker), which was unavailable at execution
+- [x] 9.3 Smoke test each route against a local `fileblob` bucket and MinIO — DONE 2026-08-05: the `fileblob` leg is
+      covered both offline (`internal/httpapi/integration_test.go`: real HTTP -> orchestrator -> fileblob) and live
+      (group 8: real MCP client, live MISS scan, HIT, badge, capabilities, health — see `docs/acceptance.md`). The
+      **MinIO/S3 backend** leg (previously blocked on Docker) is now covered too, via the new local Docker Compose
+      dev environment (`docker-compose.minio.yml`): `TestRoundTripS3` passes against a live MinIO container, and a
+      full HTTP-level live scan was verified end-to-end with the resulting object independently confirmed in MinIO
+      via `mc ls` (not just the API's own response) — cache HIT and commit-pinned lookup both correct
 
 ## 10. Documentation
 

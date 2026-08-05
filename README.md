@@ -239,6 +239,15 @@ Credentials resolve via each backend's default chain.
 | Google Cloud Storage | `gs://my-bucket` |
 | In-memory (tests only) | `mem://` |
 
+For the local filesystem backend, the bucket directory is almost always a
+separate mount from the process's own temp directory — a container volume, a
+bind mount, or a Kubernetes PVC. `fileblob`'s default write path (temp file in
+`os.TempDir()`, then rename into place) fails with `invalid cross-device link`
+in that case, so this server always opens `file://` buckets with fileblob's
+[`no_tmp_dir`](https://pkg.go.dev/gocloud.dev/blob/fileblob#URLOpener) option
+forced on: the temp file is written next to the destination instead. You may
+briefly see a `results.json.*.tmp` file next to a result during a write.
+
 Object keys match `scorecard-webapp` exactly, so the same objects are servable by
 the public webapp and readable by `scorecard-mcp`:
 
@@ -302,6 +311,27 @@ golangci-lint run ./...        # config in .golangci.yml (aligned with ossf/scor
 
 An S3-compatible integration test runs when `SCORECARD_TEST_S3_URL` is set (e.g. a
 local MinIO), and is skipped otherwise.
+
+### Running locally with Docker Compose
+
+```sh
+cp .env.example .env   # set GITHUB_AUTH_TOKEN for live scans
+docker compose up --build
+```
+
+This builds the image and serves on `:8080`, persisting results to `./data` on
+the host (via a bind mount) so they survive `docker compose down` and are
+browsable directly — see [Storage backends](#storage-backends). The container
+runs as a non-root user, so `./data` must be writable by it; if Compose
+doesn't create it for you, `mkdir -p data && chmod 0777 data` first.
+
+To exercise the S3-compatible code path instead of the default local
+filesystem store, layer the MinIO override, which also spins up a MinIO
+instance and creates the bucket:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.minio.yml up --build
+```
 
 This repository is developed spec-first with
 [OpenSpec](https://github.com/Fission-AI/OpenSpec); see

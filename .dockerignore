@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+openspec
+docs
+*.md
+.env
+.env.*
+data/

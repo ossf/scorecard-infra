@@ -1,0 +1,32 @@
+# Copyright 2026 The uwu-tools Authors.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Local development stack. By default, results are persisted to ./data via the
+# `file://` store, so cached scan results survive `docker compose down` and are
+# browsable from the host. To exercise the S3-compatible code path against
+# MinIO instead, layer the override file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.minio.yml up --build
+#
+# The container runs as a non-root user (uid 10001), so ./data must be
+# writable by it. If it doesn't already exist:
+#
+#   mkdir -p data && chmod 0777 data
+
+services:
+  scorecard-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SCORECARD_RESULTS_BUCKET_URL: "file:///data"
+      SCORECARD_LISTEN_ADDR: ":8080"
+      GITHUB_AUTH_TOKEN: ${GITHUB_AUTH_TOKEN:-}
+      SCORECARD_LOG_LEVEL: ${SCORECARD_LOG_LEVEL:-info}
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

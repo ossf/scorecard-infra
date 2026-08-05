@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 
 	"gocloud.dev/blob"
@@ -74,11 +75,39 @@ func Open(ctx context.Context, bucketURL string) (*Store, error) {
 	if bucketURL == "" {
 		return nil, errEmptyBucketURL
 	}
+	bucketURL, err := defaultFileNoTempDir(bucketURL)
+	if err != nil {
+		return nil, err
+	}
 	bucket, err := blob.OpenBucket(ctx, bucketURL)
 	if err != nil {
 		return nil, fmt.Errorf("store: opening bucket: %w", err)
 	}
 	return &Store{bucket: bucket}, nil
+}
+
+// defaultFileNoTempDir defaults fileblob's "no_tmp_dir" query parameter to
+// true for file:// URLs that don't already set it. Without it, fileblob
+// writes a temp file in os.TempDir() and renames it into place; if the bucket
+// directory is a separate mount from os.TempDir — true for a container's
+// named volume, bind mount, or a Kubernetes PVC, i.e. true for essentially
+// any real deployment — that rename fails with "invalid cross-device link".
+// Placing the temp file next to the final path instead avoids the whole
+// class of failure. Non-file schemes are returned unchanged.
+func defaultFileNoTempDir(bucketURL string) (string, error) {
+	u, err := url.Parse(bucketURL)
+	if err != nil {
+		return "", fmt.Errorf("store: parsing bucket URL: %w", err)
+	}
+	if u.Scheme != "file" {
+		return bucketURL, nil
+	}
+	q := u.Query()
+	if q.Get("no_tmp_dir") == "" {
+		q.Set("no_tmp_dir", "true")
+		u.RawQuery = q.Encode()
+	}
+	return u.String(), nil
 }
 
 // Close releases the underlying bucket.

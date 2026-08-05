@@ -234,7 +234,7 @@ Credentials resolve via each backend's default chain.
 | Backend | `SCORECARD_RESULTS_BUCKET_URL` example |
 | --- | --- |
 | Local filesystem | `file:///var/lib/scorecard` |
-| S3 / MinIO / any S3-compatible | `s3://my-bucket?region=us-east-1&endpoint=localhost:9000&s3ForcePathStyle=true` |
+| S3-compatible (AWS S3, self-hosted, etc.) | `s3://my-bucket?region=us-east-1&endpoint=localhost:9000&s3ForcePathStyle=true` |
 | Azure Blob | `azblob://my-container` |
 | Google Cloud Storage | `gs://my-bucket` |
 | In-memory (tests only) | `mem://` |
@@ -310,7 +310,7 @@ golangci-lint run ./...        # config in .golangci.yml (aligned with ossf/scor
 ```
 
 An S3-compatible integration test runs when `SCORECARD_TEST_S3_URL` is set (e.g. a
-local MinIO), and is skipped otherwise.
+local self-hosted S3-compatible store), and is skipped otherwise.
 
 ### Running locally with Docker Compose
 
@@ -326,11 +326,11 @@ runs as a non-root user, so `./data` must be writable by it; if Compose
 doesn't create it for you, `mkdir -p data && chmod 0777 data` first.
 
 To exercise the S3-compatible code path instead of the default local
-filesystem store, layer the MinIO override, which also spins up a MinIO
-instance and creates the bucket:
+filesystem store, layer the S3 override, which also spins up a self-hosted
+S3-compatible store and creates the bucket:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.minio.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.s3.yml up --build
 ```
 
 This repository is developed spec-first with
@@ -348,7 +348,7 @@ acceptance against `scorecard-mcp` on `fileblob`.
 
 Planned / deferred:
 
-- MinIO/S3 leg of the smoke test in CI (the store already has a gated integration
+- S3-compatible leg of the smoke test in CI (the store already has a gated integration
   test).
 - Teach `scorecard-mcp` to read `/capabilities` so it reports this server's
   provenance instead of the hardcoded public-cache caveats.

@@ -34,7 +34,7 @@
 - [x] 3.3 Implement the key contract: `{host}/{org}/{repo}/results.json` and `{host}/{org}/{repo}/{commit}/results.json`;
       write the latest pointer on scan write-back (`PutLatestAndCommit`)
 - [x] 3.4 Get/Put canonical JSON2 bodies; return a not-found sentinel on miss (`ErrNotFound`)
-- [x] 3.5 Unit tests over `memblob`; integration test over `fileblob` (runs) and MinIO/S3 (gated on
+- [x] 3.5 Unit tests over `memblob`; integration test over `fileblob` (runs) and S3 (gated on
       `SCORECARD_TEST_S3_URL`, skipped when no endpoint is available)
 
 ## 4. live-scan (engine + tokens)
@@ -84,14 +84,14 @@
 > EXECUTED 2026-08-05 on `fileblob` with a real `scorecard-mcp` binary (stdio,
 > `-base-url`) and a `gh` SCM token — HIT and live-MISS legs pass. See
 > `docs/acceptance.md` for the reproducible runbook and observed results. The
-> MinIO/S3 repeat is now covered too, via the Docker Compose dev environment; see 9.3.
+> S3-compatible repeat is now covered too, via the Docker Compose dev environment; see 9.3.
 
 - [x] 8.1 Integration test: run the server on `fileblob`; `scorecard-mcp -base-url http://localhost:PORT get_repo_score`
       returns a correct result on a cache HIT — verified via the real MCP binary over stdio (`get_repo_score
       ossf/scorecard` → score 8.9, 18 checks, served from the bucket)
 - [x] 8.2 Integration test: cache MISS triggers a live `scorecard.Run()` that populates the bucket and serves it —
       verified (`uwu-tools/scorecard-mcp` scanned in ~10s; both `latest` + commit-pinned keys written; re-request a
-      ~30ms HIT; MCP consumes the live result). MinIO repeat deferred to 9.3 (no Docker)
+      ~30ms HIT; MCP consumes the live result). S3-compatible repeat deferred to 9.3 (no Docker)
 - [x] 8.3 Verify `scorecard-mcp` receives correct provenance/caveats (manually, pending the MCP `/capabilities` reader)
       — VERIFIED: server side is correct (`/capabilities` = `cached+live`, `requires_opt_in:false`); the MCP still
       hardcodes public-cache caveats + `source=cached-rest`, so it misreports provenance. The `/capabilities`-reader
@@ -103,17 +103,18 @@
       tests per package; the live-engine and scorecard-mcp-compat scenarios are exercised via the fake seam and
       deferred to group 8 for a real run
 - [x] 9.2 Run `golangci-lint` (0 issues) and `go test ./...` clean — plus `actionlint` and `zizmor` on workflows
-- [x] 9.3 Smoke test each route against a local `fileblob` bucket and MinIO — DONE 2026-08-05: the `fileblob` leg is
-      covered both offline (`internal/httpapi/integration_test.go`: real HTTP -> orchestrator -> fileblob) and live
-      (group 8: real MCP client, live MISS scan, HIT, badge, capabilities, health — see `docs/acceptance.md`). The
-      **MinIO/S3 backend** leg (previously blocked on Docker) is now covered too, via the new local Docker Compose
-      dev environment (`docker-compose.minio.yml`): `TestRoundTripS3` passes against a live MinIO container, and a
-      full HTTP-level live scan was verified end-to-end with the resulting object independently confirmed in MinIO
-      via `mc ls` (not just the API's own response) — cache HIT and commit-pinned lookup both correct
+- [x] 9.3 Smoke test each route against a local `fileblob` bucket and an S3-compatible store — DONE 2026-08-05: the
+      `fileblob` leg is covered both offline (`internal/httpapi/integration_test.go`: real HTTP -> orchestrator ->
+      fileblob) and live (group 8: real MCP client, live MISS scan, HIT, badge, capabilities, health — see
+      `docs/acceptance.md`). The **S3-compatible backend** leg (previously blocked on Docker) is now covered too, via
+      the new local Docker Compose dev environment (`docker-compose.s3.yml`): `TestRoundTripS3` passes against a live
+      S3-compatible container, and a full HTTP-level live scan was verified end-to-end with the resulting object
+      independently confirmed in the object store directly (not just the API's own response) — cache HIT and
+      commit-pinned lookup both correct
 
 ## 10. Documentation
 
-- [x] 10.1 README: what it is, the contract, cloud-agnostic backends (S3/MinIO/Azure/GCS/file), env config, and the
+- [x] 10.1 README: what it is, the contract, cloud-agnostic backends (S3/Azure/GCS/file), env config, and the
       `scorecard-mcp --base-url` example; state the hybrid (cached+live) behavior and caveats
 - [x] 10.2 Document the upstream graft map and the `scorecard serve` reconciliation status in `docs/` — added
       `docs/upstream-graft.md` (per-component graft map + D11/#4665 reconciliation); README/AGENTS link to it

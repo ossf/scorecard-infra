@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package store persists Scorecard results in a cloud-agnostic object store via
-// gocloud.dev/blob. The backend (S3-compatible incl. MinIO, Azure Blob, GCS,
+// gocloud.dev/blob. The backend (S3-compatible, Azure Blob, GCS,
 // local file, or in-memory) is selected entirely by the bucket URL, so nothing
 // cloud-specific is compiled in (design D3).
 //

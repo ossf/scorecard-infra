@@ -9,7 +9,7 @@ Desktop / VS Code) drives it — over `mcp.CommandTransport`, calling the
 `get_repo_score` tool.
 
 Last executed **2026-08-05** — HIT and live-MISS legs **pass** on `fileblob`.
-The MinIO/S3 leg is deferred (needs Docker); see the bottom of this file.
+The S3-compatible leg is deferred (needs Docker); see the bottom of this file.
 
 ## Prerequisites
 
@@ -148,16 +148,20 @@ This is the motivation for `/capabilities` (design **D7**). The fix — teach
 `scorecard-mcp` repo, not here. Verified server-side; MCP-side reader is the
 tracked follow-up.
 
-## Deferred: the MinIO / S3 leg
+## Deferred: the S3-compatible leg
 
-`gocloud.dev`'s `s3blob` driver serves MinIO and any S3-compatible store. The
+`gocloud.dev`'s `s3blob` driver serves any S3-compatible store. The
 only change from Leg 1/2 is the bucket URL and credentials, e.g.:
 
 ```sh
-export AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
-export SCORECARD_RESULTS_BUCKET_URL="s3://scorecard-results?endpoint=localhost:9000&s3ForcePathStyle=true&region=us-east-1&disableSSL=true"
+export AWS_ACCESS_KEY_ID=admin AWS_SECRET_ACCESS_KEY=secret
+export SCORECARD_RESULTS_BUCKET_URL="s3://scorecard-results?region=us-east-1&endpoint=http://localhost:8333&hostname_immutable=true&use_path_style=true"
 ```
 
-Running MinIO needs Docker, which was unavailable at last execution. This leg is
-outstanding for full 9.3 sign-off; the store already has a MinIO integration
-test gated on `SCORECARD_TEST_S3_URL` (task 3.5).
+Running a local S3-compatible store needs Docker, which was unavailable at last
+execution. This leg is outstanding for full 9.3 sign-off; the store already has
+an S3-compatible integration test gated on `SCORECARD_TEST_S3_URL` (task 3.5).
+
+**Verified 2026-08-05:** `TestRoundTripS3` passes against the local
+`docker-compose.s3.yml` store using this exact bucket URL — see memory
+`scorecard-api-docker-compose`.

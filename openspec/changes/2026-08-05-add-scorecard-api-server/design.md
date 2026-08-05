@@ -91,7 +91,7 @@ behavior is the whole point).
 
 `internal/store` opens a bucket from a URL env var (e.g.
 `SCORECARD_RESULTS_BUCKET_URL`) and blank-imports every driver: `s3blob`
-(AWS S3, MinIO, Ceph, any S3-compatible), `azureblob`, `gcsblob`, `fileblob`
+(AWS S3, Ceph, any S3-compatible), `azureblob`, `gcsblob`, `fileblob`
 (local dev), `memblob` (tests). Credentials come from each backend's default chain,
 which `gocloud.dev` honors. **No hardcoded `gs://`; no BigQuery.** _Alternative:_
 per-cloud SDKs behind our own interface — rejected (reinvents the CDK the webapp
@@ -225,7 +225,8 @@ aggregate scores say nothing about individual behaviors).
 - **Live scan latency vs. request timeout** → sync-with-timeout then `202`/retry
   (D5); commit-immutability makes retries cheap.
 - **`gocloud.dev` driver/credential differences across clouds** → integration-test
-  against `fileblob` and MinIO in CI; document per-backend URL + cred setup.
+  against `fileblob` and a self-hosted S3-compatible store in CI; document
+  per-backend URL + cred setup.
 - **Scorecard v5 API drift** → pin the module; keep `scan` a thin adapter over
   `pkg/scorecard`.
 - **Divergence from `scorecard serve`** → treat serve reconciliation as a first-class
@@ -242,7 +243,8 @@ Greenfield — no data migration. Phased:
 1. **This change (v0):** `store` (blob, all drivers), `orchestrator` (read-through
    cache + single-flight + sync/async), `scan` (`pkg/scorecard.Run` via in-proc
    pool), `tokens` (pool + limiter), HTTP contract (`/projects`, `/badge`,
-   `/capabilities`, `/health`), verified against `fileblob` + MinIO with
+   `/capabilities`, `/health`), verified against `fileblob` + a self-hosted
+   S3-compatible store with
    `scorecard-mcp` as the acceptance test.
 2. **Later:** `gocloud.dev/pubsub` broker; warm-cache scheduler; analytics/index.
 3. **Later:** graft upstream — webapp bucket parameterization; `scorecard serve`

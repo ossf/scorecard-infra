@@ -51,7 +51,7 @@ results live on demand** when the cache misses.
   handling, and responsible-AI framing on every response. Verified as a drop-in
   `--base-url` target for `scorecard-mcp`.
 - `result-store`: cloud-agnostic persistence of Scorecard results via
-  `gocloud.dev/blob`, backend chosen by a URL env var (S3-compatible incl. MinIO,
+  `gocloud.dev/blob`, backend chosen by a URL env var (S3-compatible,
   Azure Blob, GCS, local file, in-memory), using the `{host}/{org}/{repo}[/{commit}]/results.json`
   key contract and storing canonical JSON2 bodies.
 - `result-cache`: a read-through cache/orchestrator that serves fresh stored results,

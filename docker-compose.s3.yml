@@ -1,0 +1,38 @@
+# Copyright 2026 The uwu-tools Authors.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Override for exercising the S3-compatible store backend locally, via a
+# self-hosted S3-compatible object store (currently SeaweedFS — swap the
+# `s3` service's image below to point at a different one):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.s3.yml up --build
+
+services:
+  scorecard-api:
+    environment:
+      SCORECARD_RESULTS_BUCKET_URL: "s3://scorecard-results?region=us-east-1&endpoint=http://s3:8333&hostname_immutable=true&use_path_style=true"
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: secret
+    depends_on:
+      s3:
+        condition: service_healthy
+
+  s3:
+    image: chrislusf/seaweedfs:4.40
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: secret
+      S3_BUCKET: scorecard-results
+    ports:
+      - "8333:8333"
+      - "9333:9333"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9333/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  s3-data:

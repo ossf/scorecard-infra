@@ -4,9 +4,9 @@
 # Local development stack. By default, results are persisted to ./data via the
 # `file://` store, so cached scan results survive `docker compose down` and are
 # browsable from the host. To exercise the S3-compatible code path against
-# MinIO instead, layer the override file:
+# a self-hosted S3-compatible store instead, layer the override file:
 #
-#   docker compose -f docker-compose.yml -f docker-compose.minio.yml up --build
+#   docker compose -f docker-compose.yml -f docker-compose.s3.yml up --build
 #
 # The container runs as a non-root user (uid 10001), so ./data must be
 # writable by it. If it doesn't already exist:

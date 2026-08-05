@@ -56,7 +56,8 @@ internal/
   request/scan timeouts, enabled checks, worker concurrency, listen port, SCM creds.
 - Blank-import all blob drivers: `s3blob`, `azureblob`, `gcsblob`, `fileblob`,
   `memblob`. Creds resolve via each backend's default chain.
-- **No BigQuery.** Local dev = `fileblob`; local S3 = MinIO; tests = `memblob`.
+- **No BigQuery.** Local dev = `fileblob`; local S3 = a self-hosted
+  S3-compatible store; tests = `memblob`.
 
 ## Pre-work to resolve before the HTTP layer (tasks 0.x)
 
@@ -102,7 +103,8 @@ Structure code so these split cleanly.
 `scorecard-mcp --base-url http://localhost:PORT get_repo_score <repo>` returns a
 correct result: a cache **HIT** from a `fileblob` bucket, and a cache **MISS** that
 triggers a live `scorecard.Run()`, populates the bucket, and serves it — with an
-integration test proving both paths against `fileblob` and MinIO.
+integration test proving both paths against `fileblob` and a self-hosted
+S3-compatible store.
 
 ## Conventions
 

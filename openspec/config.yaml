@@ -30,7 +30,8 @@ context: |
 
   Cloud-agnostic rules: no hardcoded gs://; all config via env (bucket URL, TTL,
   creds, checks, concurrency, port); creds resolve via each backend's default chain;
-  no BigQuery. Local dev = fileblob; local S3 = MinIO; tests = memblob.
+  no BigQuery. Local dev = fileblob; local S3 = a self-hosted S3-compatible
+  store; tests = memblob.
 
   Placement / endgame: incubate in this standalone repo (uwu-tools/scorecard-api),
   a sibling to uwu-tools/scorecard-mcp. Graft upstream as it matures — the contract

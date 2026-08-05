@@ -5,7 +5,7 @@
 ### Requirement: Cloud-agnostic blob storage
 
 Results SHALL be persisted and retrieved through a blob-storage abstraction that
-supports S3-compatible (including MinIO), Azure Blob, Google Cloud Storage,
+supports S3-compatible, Azure Blob, Google Cloud Storage,
 local-filesystem, and in-memory backends, with the backend selected by a storage URL.
 
 #### Scenario: Backend selected by URL scheme

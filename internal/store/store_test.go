@@ -192,7 +192,8 @@ func TestFileblobSurvivesUnwritableTempDir(t *testing.T) {
 	runRoundTrip(t, "file://"+t.TempDir())
 }
 
-// TestRoundTripS3 runs the contract against an S3-compatible bucket (e.g. MinIO).
+// TestRoundTripS3 runs the contract against an S3-compatible bucket (e.g. a
+// self-hosted S3-compatible store).
 // It is skipped unless SCORECARD_TEST_S3_URL is set to a gocloud.dev/blob s3://
 // URL; credentials resolve via the AWS default chain.
 func TestRoundTripS3(t *testing.T) {
@@ -200,7 +201,7 @@ func TestRoundTripS3(t *testing.T) {
 
 	bucketURL := os.Getenv("SCORECARD_TEST_S3_URL")
 	if bucketURL == "" {
-		t.Skip("set SCORECARD_TEST_S3_URL (e.g. a MinIO s3:// URL) to run the S3 integration test")
+		t.Skip("set SCORECARD_TEST_S3_URL (e.g. a local S3-compatible s3:// URL) to run the S3 integration test")
 	}
 	runRoundTrip(t, bucketURL)
 }

@@ -6,7 +6,7 @@ require (
 	github.com/open-feature/go-sdk v1.17.2
 	github.com/ossf/scorecard/v5 v5.5.0
 	gocloud.dev v0.46.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
 )
 

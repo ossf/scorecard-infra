@@ -11,7 +11,7 @@
 version: "2"
 run:
   concurrency: 6
-  timeout: 5m
+  timeout: 10m
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

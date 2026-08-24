@@ -24,6 +24,6 @@ ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 make build-github-server
 
-FROM gcr.io/distroless/base:nonroot@sha256:97b9d04bed1c754b756c3c4b6a04915c22fb0b5d96a59944eb3bf78c26e6e157
+FROM gcr.io/distroless/base:nonroot@sha256:2d7d29b504e7166f6d0c7655a18ebf5def5b37b029f8c4f8667e434ba774844f
 COPY --from=authserver /src/cron/internal/githubserver/github-auth-server cron/internal/githubserver/github-auth-server
 ENTRYPOINT ["cron/internal/githubserver/github-auth-server"]

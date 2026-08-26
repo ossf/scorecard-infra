@@ -297,13 +297,13 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/mod v0.39.0
+	golang.org/x/mod v0.40.0
 	golang.org/x/net v0.58.0
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
+	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	golang.org/x/vuln v1.1.4 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/api v0.272.0 // indirect

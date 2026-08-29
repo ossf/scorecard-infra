@@ -175,6 +175,63 @@ jobs:
   # Scan inventory checks for the batch pipeline. add-projects must be a no-op on
   # an already-normalized inventory, so a non-empty diff means someone hand-edited
   # the CSV into a state the tooling would not produce.
+  # api/app/generated/ is committed, so nothing forced it to stay in step with
+  # api/openapi.yaml -- a spec edit could merge with stale generated code, and
+  # did (PR #69). license-headers is the only other job that touches this tree,
+  # and only to exclude it. Same shape as add-projects below: run the generator,
+  # then assert it changed nothing.
+  swagger-verify:
+    name: swagger-verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      with:
+        egress-policy: audit # TODO(workflow): change to 'egress-policy: block' after a couple of runs
+
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: '1.25'
+        check-latest: true
+
+    # The version lives in the Makefile so a developer running `make
+    # api-swagger` locally is held to the same one; check-swagger fails loudly
+    # on a mismatch rather than producing a diff nobody can explain.
+    # Retried for the same reason as add-projects: this reaches the module
+    # proxy, which flakes.
+    - name: Install pinned go-swagger
+      run: |
+        version="$(make --no-print-directory print-swagger-version)"
+        echo "pinned go-swagger: ${version}"
+        for attempt in 1 2 3; do
+          if go install "github.com/go-swagger/go-swagger/cmd/swagger@${version}"; then
+            exit 0
+          fi
+          echo "::warning::attempt $attempt failed, retrying"
+          sleep $((attempt * 15))
+        done
+        echo "::error::could not install go-swagger ${version} after 3 attempts"
+        exit 1
+
+    # git diff alone would miss a *new* generated file, which is exactly what a
+    # newly added operation in the spec produces. --porcelain covers both.
+    - name: api-swagger is a no-op on a committed spec
+      run: |
+        make api-swagger
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "::error::api/app/generated is out of date with api/openapi.yaml -- run 'make api-swagger' and commit the result"
+          git status --porcelain
+          git diff
+          exit 1
+        fi
+
   add-projects:
     name: add-projects
     runs-on: ubuntu-latest

@@ -40,7 +40,20 @@ PROTOC ?= $(shell which protoc)
 PROTOC_GEN_GO ?= $(shell which protoc-gen-go)
 KOCACHE_PATH = /tmp/ko
 
-.PHONY: check-ko check-protoc
+# go-swagger is the one tool here pinned to an exact version, because it is the
+# one whose output is committed. A ko or protoc version difference shows up in
+# an artifact CI rebuilds anyway; a go-swagger difference shows up as hundreds
+# of spurious lines in api/app/generated/, indistinguishable from an intended
+# change. The swagger-verify presubmit regenerates and diffs, so CI and a
+# developer's machine have to agree on the version or the job cannot be
+# reproduced locally.
+#
+# Bumping it is deliberate: change this, run `make api-swagger`, and commit the
+# regenerated tree in the same commit.
+SWAGGER_VERSION ?= v0.36.5
+SWAGGER ?= $(shell which swagger)
+
+.PHONY: check-ko check-protoc check-swagger
 check-ko:
 	@if [ -z "$(KO)" ]; then \
 		echo "ko not found on PATH - install from https://ko.build/install/"; exit 1; \
@@ -52,6 +65,27 @@ check-protoc:
 	@if [ -z "$(PROTOC_GEN_GO)" ]; then \
 		echo "protoc-gen-go not found on PATH - go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; exit 1; \
 	fi
+
+# Unlike check-ko and check-protoc, this asserts the version and not just
+# presence -- see the SWAGGER_VERSION comment above.
+check-swagger:
+	@if [ -z "$(SWAGGER)" ]; then \
+		echo "swagger not found on PATH"; \
+		echo "  go install github.com/go-swagger/go-swagger/cmd/swagger@$(SWAGGER_VERSION)"; \
+		exit 1; \
+	fi
+	@have=$$($(SWAGGER) version 2>/dev/null | awk '/^version:/ {print $$2}'); \
+	if [ "$$have" != "$(SWAGGER_VERSION)" ]; then \
+		echo "swagger $$have is on PATH, but this repository generates with $(SWAGGER_VERSION)"; \
+		echo "  go install github.com/go-swagger/go-swagger/cmd/swagger@$(SWAGGER_VERSION)"; \
+		exit 1; \
+	fi
+
+# Consumed by .github/workflows/presubmits.yml so the pinned version has one
+# home. Intentionally undocumented in `make help`.
+.PHONY: print-swagger-version
+print-swagger-version:
+	@echo $(SWAGGER_VERSION)
 
 $(KOCACHE_PATH):
 	mkdir -p $(KOCACHE_PATH)
@@ -76,6 +110,7 @@ api-build: ## Build the results API binary (api/scorecard-webapp)
 	$(MAKE) -C api scorecard-webapp
 
 api-swagger: ## Regenerate the API server and client from api/openapi.yaml
+api-swagger: check-swagger
 	$(MAKE) -C api swagger
 
 # Context is the repository root because go.mod lives here, matching the

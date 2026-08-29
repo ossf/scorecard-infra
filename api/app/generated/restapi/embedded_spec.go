@@ -43,7 +43,7 @@ func init() {
   "info": {
     "description": "API to interact with a project's published Scorecard result",
     "title": "OpenSSF Scorecard API",
-    "version": "1.0.1"
+    "version": "1.1.0"
   },
   "host": "api.scorecard.dev",
   "paths": {
@@ -425,7 +425,7 @@ func init() {
   "info": {
     "description": "API to interact with a project's published Scorecard result",
     "title": "OpenSSF Scorecard API",
-    "version": "1.0.1"
+    "version": "1.1.0"
   },
   "host": "api.scorecard.dev",
   "paths": {

@@ -18,10 +18,10 @@
 //
 //	API to interact with a project's published Scorecard result
 //	Schemes:
-//	  http
-//	Host: api.securityscorecards.dev
+//	  https
+//	Host: api.scorecard.dev
 //	BasePath: /
-//	Version: 1.0.0
+//	Version: 1.0.1
 //
 //	Consumes:
 //	  - application/json

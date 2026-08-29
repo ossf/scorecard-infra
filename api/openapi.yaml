@@ -16,10 +16,10 @@ swagger: '2.0'
 info:
   title: OpenSSF Scorecard API
   description: API to interact with a project's published Scorecard result
-  version: 1.0.0
-host: api.securityscorecards.dev
+  version: 1.0.1
+host: api.scorecard.dev
 schemes:
-  - http
+  - https
 
 consumes:
   - application/json
@@ -83,7 +83,9 @@ paths:
               type: string
               description: "Surrogate key for Fastly CDN purging."
         default:
-          $ref: '#/responses/InternalServerError'
+          description: There was an internal error in the server while processing the request
+          schema:
+            $ref: "#/definitions/Error"
 
   /projects/{platform}/{org}/{repo}:
     parameters:
@@ -126,11 +128,29 @@ paths:
           schema:
             $ref: '#/definitions/ScorecardResult'
         400:
-          $ref: '#/responses/BadRequest'
+          description: The request provided to the server was invalid
+          headers:
+            Surrogate-Control:
+              type: string
+              description: "TTL for CDN caching. Example: max-age=3600"
+            Cache-Control:
+              type: string
+              description: "TTL for browser caching. Example: max-age=3600"
+          schema:
+            $ref: "#/definitions/Error"
         404:
-          $ref: '#/responses/NotFound'
+          description: The content requested could not be found
+          headers:
+            Surrogate-Control:
+              type: string
+              description: "TTL for CDN caching. Example: max-age=3600"
+            Cache-Control:
+              type: string
+              description: "TTL for browser caching. Example: max-age=3600"
         default:
-          $ref: '#/responses/InternalServerError'
+          description: There was an internal error in the server while processing the request
+          schema:
+            $ref: "#/definitions/Error"
     post:
       summary: Publish a repository's OIDC verified ScorecardResult
       operationId: postResult
@@ -148,9 +168,20 @@ paths:
           schema:
             type: string
         400:
-          $ref: '#/responses/BadRequest'
+          description: The request provided to the server was invalid
+          headers:
+            Surrogate-Control:
+              type: string
+              description: "TTL for CDN caching. Example: max-age=3600"
+            Cache-Control:
+              type: string
+              description: "TTL for browser caching. Example: max-age=3600"
+          schema:
+            $ref: "#/definitions/Error"
         default:
-          $ref: '#/responses/InternalServerError'
+          description: There was an internal error in the server while processing the request
+          schema:
+            $ref: "#/definitions/Error"
 
 definitions:
   Error:
@@ -252,29 +283,3 @@ definitions:
         type: string
       tlogIndex:
         type: integer
-
-responses:
-  NotFound:
-    description: The content requested could not be found
-    headers:
-      Surrogate-Control:
-        type: string
-        description: "TTL for Fastly CDN caching. Example: max-age=3600"
-      Cache-Control:
-        type: string
-        description: "TTL for browser caching. Example: max-age=3600"
-  BadRequest:
-    description: The request provided to the server was invalid
-    headers:
-      Surrogate-Control:
-        type: string
-        description: "TTL for Fastly CDN caching. Example: max-age=3600"
-      Cache-Control:
-        type: string
-        description: "TTL for browser caching. Example: max-age=3600"
-    schema:
-      $ref: "#/definitions/Error"
-  InternalServerError:
-    description: There was an internal error in the server while processing the request
-    schema:
-      $ref: "#/definitions/Error"

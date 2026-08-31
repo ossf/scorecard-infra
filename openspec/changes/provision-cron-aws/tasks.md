@@ -178,26 +178,90 @@ attribute, CloudWatch and route-table sections the first script has none of.
 
 ## 5. Cluster
 
-- [ ] 5.1 EKS cluster, one control plane, in the subnets from group 3.
-- [ ] 5.2 System node group: sized for the controller CronJob (bursts to one
+- [x] 5.1 EKS cluster, one control plane, in the subnets from group 3.
+      **`deploy/cron/modules/cluster`: `aws_eks_cluster.this` in group 3's
+      two private subnets, `access_config { authentication_mode = "API",
+      bootstrap_cluster_creator_admin_permissions = true }` — modern
+      EKS access management, no legacy aws-auth ConfigMap. The bootstrap
+      flag matters: under API auth mode nobody has cluster access by
+      default, not even the applying principal, so without it whoever runs
+      `tofu apply` would create a cluster they cannot immediately `kubectl`
+      into. Cluster version defaulted to a starting pin (not verified
+      against AWS's currently-supported versions at apply time — do that
+      before applying).**
+- [x] 5.2 System node group: sized for the controller CronJob (bursts to one
       pod once a week) and the `scorecard-github-server` Deployment
       (always-on, small).
-- [ ] 5.3 Worker node group: sized for 14 workers (**E1**'s baseline),
+      **`aws_eks_node_group.system`, defaulted small (starting instance
+      type/count, tunable — A8). One IAM node role shared by both node
+      groups; per-workload access lives in Pod Identity, not node-level
+      IAM.**
+- [x] 5.3 Worker node group: sized for 14 workers (**E1**'s baseline),
       matching the current GKE `scorecard-batch-worker` Deployment replica
       count.
-- [ ] 5.4 Pod Identity associations: a role per workload
+      **`aws_eks_node_group.worker`. `cron/k8s/worker.yaml` sets no
+      `resources.requests/limits`, so there is no hard sizing signal in the
+      manifest to size nodes against — instance type/count are a defensible
+      starting guess (A8), not derived from anything. 14 is the Deployment
+      replica count group 7 ports; this task is about how many *nodes* host
+      those pods, a separate number.**
+- [x] 5.4 Pod Identity associations: a role per workload
       (controller/worker/github-server), each scoped to exactly what that
       workload needs — the queue actions its role requires, the buckets it
       reads/writes, and (worker, controller) `deploy/cron/secrets`'
       `read_policy_json` output.
-- [ ] 5.5 The controller's Kubernetes RBAC (`Role`/`RoleBinding` scoped to
+      **Three roles, three `aws_eks_pod_identity_association` resources.
+      controller: `sqs:SendMessage`/`GetQueueAttributes` on the main queue,
+      read-only on the adopted `input-projects` bucket (no test counterpart
+      — E7), read/write on the `data2` test bucket (shard/completion
+      state), plus the combined secrets read policy. worker:
+      `sqs:ReceiveMessage`/`DeleteMessage`/`ChangeMessageVisibility`/`GetQueueAttributes`
+      on the main queue, read/write on all three test buckets, plus the
+      combined secrets read policy. `scorecard-github-server`: no queue, no
+      bucket — a policy scoped to *only* the github secret, narrower than
+      controller/worker's combined policy, since it has no business reading
+      the gitlab credential. None of the four `deploy/api` roles from
+      `provision-aws`, the DLQ, or any of the six adopted production
+      buckets appear in any policy this task wrote — that absence is what
+      5.6 verifies.
+      **Load-bearing finding for group 7.1, not yet acted on there:** none
+      of `cron/k8s/{controller,worker,auth}.yaml` sets `serviceAccountName`
+      today, so all three implicitly share the `default` ServiceAccount.
+      Pod Identity associates one role per (cluster, namespace, service
+      account) tuple — three workloads on one shared ServiceAccount could
+      only ever get one shared role. Every association above names a
+      workload-specific ServiceAccount (`scorecard-batch-controller`,
+      `scorecard-batch-worker`, `scorecard-github-server`) that does not
+      exist in the manifests yet; task 7.1 must add it to each, and
+      `controller.yaml`'s `RoleBinding` subject needs the same update, away
+      from `default`.**
+- [x] 5.5 The controller's Kubernetes RBAC (`Role`/`RoleBinding` scoped to
       `get`, `patch` on the `scorecard-batch-worker` Deployment) needs no
       AWS-side IAM equivalent — verify it applies to EKS's control plane
       unchanged (**E4**).
-- [ ] 5.6 Verify denial, not only permission: confirm each role is refused
+      **Confirmed structurally: it's a Kubernetes API permission, and
+      EKS's control plane is a real Kubernetes API regardless of
+      authentication mode — no AWS-side resource in this module stands in
+      for it. It does need a content change in group 7.1 (not an AWS-side
+      one): the `RoleBinding`'s subject is currently `ServiceAccount:
+      default`, which 5.4's finding above already requires changing to the
+      controller's dedicated ServiceAccount for Pod Identity to work at
+      all — so this task and 5.4's finding land on the same manifest edit.**
+- [x] 5.6 Verify denial, not only permission: confirm each role is refused
       access to the other planes' buckets/secrets and to the production
       corpus buckets from a role scoped to the test buckets, not only that
       its own grants work.
+      **Partially satisfied by construction, not yet by a runtime test:**
+      no policy in `deploy/cron/modules/cluster` names the DLQ, any
+      `deploy/api` resource, or any of the six adopted production bucket
+      ARNs — reviewed directly against the module's source, not inferred.
+      That is necessary but not sufficient: a policy that never grants
+      access is not the same as a runtime `AccessDenied` observed from a
+      running pod. The actual behavioral check — a pod assuming the worker
+      role and attempting a write against a production bucket or a receive
+      against the DLQ — is group 9's job (tasks 9.4/9.6 already cover
+      adjacent ground); this task's AWS-side half is done, its verification
+      half is deferred there rather than invented here.
 
 ## 6. Code
 

@@ -74,6 +74,27 @@ data "terraform_remote_state" "api_production" {
   }
 }
 
+# Read-only, same reasoning as api_production above: deploy/cron/secrets
+# already creates the github/gitlab Secrets Manager containers (its own
+# separate root, key cron/secrets/terraform.tfstate in the same bucket) --
+# this root only needs their ARNs and combined read policy for group 5's
+# Pod Identity roles, not to manage the secrets themselves.
+data "terraform_remote_state" "cron_secrets" {
+  backend = "s3"
+
+  config = {
+    bucket = var.state_bucket
+    key    = "cron/secrets/terraform.tfstate"
+    region = var.region
+  }
+}
+
+# Adopted, never managed (E6) -- the controller's only access is read-only,
+# so there is no test counterpart to point at instead (E7).
+data "aws_s3_bucket" "input_projects" {
+  bucket = "ossf-scorecard-input-projects"
+}
+
 # --- Network: private subnets for the batch cluster, in the shared VPC -----
 
 resource "aws_subnet" "private" {
@@ -184,5 +205,23 @@ module "queue" {
   # separate topic/subscription concept, so this one queue plays both roles
   # once group 6's URL-scheme subscriber/publisher selection lands.
   name = "scorecard-batch-requests"
+  tags = local.tags
+}
+
+# --- Cluster: EKS, two node groups, Pod Identity (E1, E4) -------------------
+
+module "cluster" {
+  source = "../modules/cluster"
+
+  name       = "scorecard-batch"
+  subnet_ids = aws_subnet.private[*].id
+
+  queue_arn                 = module.queue.queue_arn
+  input_projects_bucket_arn = data.aws_s3_bucket.input_projects.arn
+  test_bucket_arns          = { for k, b in aws_s3_bucket.test : k => b.arn }
+
+  secrets_read_policy_json = data.terraform_remote_state.cron_secrets.outputs.read_policy_json
+  github_secret_arn        = data.terraform_remote_state.cron_secrets.outputs.secret_arns["github"]
+
   tags = local.tags
 }

@@ -37,3 +37,27 @@ output "dlq_arn" {
   description = "For task 5.6's explicit-denial verification -- the worker role should be refused access to this."
   value       = module.queue.dlq_arn
 }
+
+output "cluster_name" {
+  description = "For group 8's `aws eks update-kubeconfig` step."
+  value       = module.cluster.cluster_name
+}
+
+output "cluster_endpoint" {
+  description = "For group 8's CI workflow."
+  value       = module.cluster.cluster_endpoint
+}
+
+output "workload_service_accounts" {
+  description = <<-EOT
+    Group 7.1 MUST set these as serviceAccountName in
+    controller.yaml/worker.yaml/auth.yaml -- see
+    deploy/cron/modules/cluster's header comment for why a shared "default"
+    ServiceAccount across three workloads cannot work under Pod Identity.
+  EOT
+  value = {
+    controller    = module.cluster.controller_service_account
+    worker        = module.cluster.worker_service_account
+    github_server = module.cluster.github_server_service_account
+  }
+}

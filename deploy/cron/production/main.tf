@@ -174,3 +174,15 @@ resource "aws_s3_bucket_public_access_block" "test" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+# --- Queue: SQS Standard + DLQ (E2), replacing GCP Pub/Sub -------------------
+
+module "queue" {
+  source = "../modules/queue"
+
+  # Matches cron/config/config.yaml's existing Pub/Sub topic name. SQS has no
+  # separate topic/subscription concept, so this one queue plays both roles
+  # once group 6's URL-scheme subscriber/publisher selection lands.
+  name = "scorecard-batch-requests"
+  tags = local.tags
+}

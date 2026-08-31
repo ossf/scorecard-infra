@@ -150,13 +150,31 @@ attribute, CloudWatch and route-table sections the first script has none of.
 
 ## 4. Queue
 
-- [ ] 4.1 Resolve **E8**: adopt `openssf-scorecard` or create a new queue,
+- [x] 4.1 Resolve **E8**: adopt `openssf-scorecard` or create a new queue,
       per task 1.2's finding.
-- [ ] 4.2 Provision the SQS Standard queue and its DLQ (**E2**), with a
+      **Decided in `design.md`'s E8 section (task 1.2): create fresh, leave
+      the existing placeholder queue alone. `deploy/cron/modules/queue`
+      creates `scorecard-batch-requests` and its DLQ, named to match
+      `cron/config/config.yaml`'s existing Pub/Sub topic name — SQS has no
+      separate topic/subscription concept, so this one queue plays both
+      roles once group 6 lands.**
+- [x] 4.2 Provision the SQS Standard queue and its DLQ (**E2**), with a
       finite `maxReceiveCount` redrive policy.
-- [ ] 4.3 Size the visibility timeout default to comfortably exceed a typical
+      **`deploy/cron/modules/queue/main.tf`: `aws_sqs_queue.this` with a
+      `redrive_policy` pointing at `aws_sqs_queue.dlq`,
+      `maxReceiveCount = var.max_receive_count` (default 5 — not a carried
+      value, since E8's placeholder queue never had a redrive policy at
+      all). Wired into `deploy/cron/production` as `module "queue"`. `tofu
+      plan` against live state: 2 to add (queue + DLQ), 0 to change
+      elsewhere, 0 warnings. Not yet applied.**
+- [x] 4.3 Size the visibility timeout default to comfortably exceed a typical
       scan's duration — this is a starting value the heartbeat (**E3**)
       extends, not the sole protection against redelivery.
+      **`visibility_timeout_seconds` defaults to 3600, `receive_wait_time_seconds`
+      to 20 — both carried from E8's finding: the pre-existing unwired
+      `openssf-scorecard` queue was tuned to exactly these values on
+      2026-08-28 by whoever understood this workload, even though that
+      queue itself was not reused.**
 
 ## 5. Cluster
 

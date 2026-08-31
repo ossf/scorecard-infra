@@ -164,9 +164,9 @@ attribute, CloudWatch and route-table sections the first script has none of.
       `redrive_policy` pointing at `aws_sqs_queue.dlq`,
       `maxReceiveCount = var.max_receive_count` (default 5 — not a carried
       value, since E8's placeholder queue never had a redrive policy at
-      all). Wired into `deploy/cron/production` as `module "queue"`. `tofu
-      plan` against live state: 2 to add (queue + DLQ), 0 to change
-      elsewhere, 0 warnings. Not yet applied.**
+      all). Wired into `deploy/cron/production` as `module "queue"`. Applied
+      2026-08-31: 2 added, 0 changed, 0 destroyed, matching the plan
+      exactly.**
 - [x] 4.3 Size the visibility timeout default to comfortably exceed a typical
       scan's duration — this is a starting value the heartbeat (**E3**)
       extends, not the sole protection against redelivery.

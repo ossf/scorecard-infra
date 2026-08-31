@@ -199,7 +199,11 @@ attribute, CloudWatch and route-table sections the first script has none of.
       and publicly (group 8's CI has no stable egress range to allowlist, so
       IAM is the control, not the network). Control-plane `api`/`audit`/
       `authenticator` logs enabled into a declared log group with finite
-      retention, rather than EKS's silent never-expire default.**
+      retention, rather than EKS's silent never-expire default.
+      **Applied 2026-08-31: 28 added, 0 changed, 0 destroyed across the whole
+      root, matching the plan exactly. The control plane took 10m6s of a
+      13m30s apply; the `cii-data` test bucket from 3.4 and every IAM role
+      landed in the first second.**
 - [x] 5.2 System node group: sized for the controller CronJob (bursts to one
       pod once a week) and the `scorecard-github-server` Deployment
       (always-on, small).
@@ -226,7 +230,8 @@ attribute, CloudWatch and route-table sections the first script has none of.
       same `scorecard.dev/pool` label both pools set: without it the two-pool
       split is decorative, since nothing would stop 14 scanning pods landing
       on the system node. Group 7.1 owes `worker.yaml` the matching
-      toleration.**
+      toleration. Both node groups applied 2026-08-31 — worker in 1m37s,
+      system in 2m8s, in parallel after the control plane.**
 - [x] 5.4 Pod Identity associations: a role per workload
       (controller/worker/CII worker/github-server), each scoped to exactly
       what that workload needs — the queue actions its role requires, the
@@ -283,7 +288,9 @@ attribute, CloudWatch and route-table sections the first script has none of.
       IAM grant is not a delivery mechanism: the manifests read credentials
       as *Kubernetes* Secrets (`secretKeyRef`, and a mounted file for the
       GitHub App key), and nothing yet translates Secrets Manager into those
-      — see 7.2.**
+      — see 7.2. All four roles, their policies and their associations
+      applied 2026-08-31; the `eks-pod-identity-agent` addon installed after
+      both node groups were up, per the ordering added for it.**
 - [x] 5.5 The controller's Kubernetes RBAC (`Role`/`RoleBinding` scoped to
       `get`, `patch` on the `scorecard-batch-worker` Deployment) needs no
       AWS-side IAM equivalent — verify it applies to EKS's control plane

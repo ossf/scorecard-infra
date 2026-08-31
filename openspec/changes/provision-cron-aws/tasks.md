@@ -101,8 +101,13 @@ attribute, CloudWatch and route-table sections the first script has none of.
       `single_nat_gateway` defaults true, so production has exactly one.
       AZs come from that same remote-state read (`outputs.availability_zones`,
       added in 3.3) rather than a second `aws_availability_zones` lookup, so
-      the two roots cannot resolve to different zones. `tofu validate`
-      (`-backend=false`) passes; not yet applied.**
+      the two roots cannot resolve to different zones.
+      **Applied 2026-08-31: subnets `subnet-04c149972bd700de6`
+      (`us-east-1a`, `10.21.160.0/20`) and `subnet-0c2ea804fcae14e91`
+      (`us-east-1b`, `10.21.176.0/20`); route tables `rtb-0b5e9d70553f8ef31`
+      and `rtb-05189d9c5ae846c95`, each with a default route through
+      `nat-07e482d1381ab6fd4`. `tofu apply`: 22 added, 0 changed, 0
+      destroyed, matching the plan exactly.**
 - [x] 3.3 Edit `deploy/api/modules/network`: replace `aws_vpc_endpoint.s3`'s
       inline `route_table_ids` with `aws_vpc_endpoint_route_table_association`
       resources for its own two private route tables (additive at the AWS API
@@ -124,9 +129,18 @@ attribute, CloudWatch and route-table sections the first script has none of.
       `environments/staging` (staging also calls `modules/network`, so the
       edit had to stay safe for both — it is, since the resulting AWS-side
       associations are unchanged, only the resource that manages them
-      changed). Applying `deploy/api/production` — the live serving-plane
-      state — is deliberately left for a human-run, reviewed
-      `tofu plan`/`apply`, not done as part of this task.**
+      changed).
+      **Both sides applied 2026-08-31, by Stephen, in order. `deploy/api/production`
+      first: 3 added (2 `aws_vpc_endpoint_route_table_association` —
+      `a-vpce-0cc8a7b4c119bfabd3203777375` and
+      `a-vpce-0cc8a7b4c119bfabd4270686478` — plus an unrelated ECS task
+      definition replacement from an intentional image digest bump bundled
+      into the same apply), 1 changed, 1 destroyed. Then `deploy/cron/production`
+      (3.2/3.4's apply): its own two associations,
+      `a-vpce-0cc8a7b4c119bfabd2504776140` and
+      `a-vpce-0cc8a7b4c119bfabd4208970294`, against the same endpoint
+      `vpce-0cc8a7b4c119bfabd` — four associations on one endpoint total, no
+      conflict, confirming the association-resource split's whole premise.**
 - [x] 3.4 Create the three test buckets (**E7**): `ossf-scorecard-cron-results-test`,
       `ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test`. Private,
       versioning on (unlike the adopted production buckets, which have it
@@ -136,7 +150,8 @@ attribute, CloudWatch and route-table sections the first script has none of.
       block on each, matching `deploy/api/modules/state-backend`'s bucket
       style minus the state bucket's `prevent_destroy` and
       deny-insecure-transport policy — not warranted for buckets this
-      disposable. Not yet applied.**
+      disposable. Applied 2026-08-31, all three created empty and versioned
+      as planned.**
 
 ## 4. Queue
 

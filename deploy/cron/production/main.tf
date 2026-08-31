@@ -138,9 +138,14 @@ resource "aws_s3_bucket" "test" {
 }
 
 resource "aws_s3_bucket_versioning" "test" {
-  for_each = aws_s3_bucket.test
+  # for_each over var.test_buckets, not aws_s3_bucket.test -- the latter drags
+  # in every deprecated attribute on aws_s3_bucket (acl, policy,
+  # website_domain, ...) as a for_each dependency even though only .id is
+  # read, which the AWS provider surfaces as spurious deprecation warnings on
+  # every plan.
+  for_each = var.test_buckets
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.test[each.key].id
 
   versioning_configuration {
     status = "Enabled"
@@ -148,9 +153,9 @@ resource "aws_s3_bucket_versioning" "test" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "test" {
-  for_each = aws_s3_bucket.test
+  for_each = var.test_buckets
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.test[each.key].id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -160,9 +165,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "test" {
 }
 
 resource "aws_s3_bucket_public_access_block" "test" {
-  for_each = aws_s3_bucket.test
+  for_each = var.test_buckets
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.test[each.key].id
 
   block_public_acls       = true
   block_public_policy     = true

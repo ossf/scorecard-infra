@@ -215,8 +215,8 @@ private range for the batch cluster without colliding. Subnets-per-VPC and
 route-tables-per-VPC are both 200; neither constrains this.
 
 **The S3 gateway endpoint is the real coupling, and it is sharper than a
-shared NAT Gateway.** Production already has one, `vpce-0cc8a7b4c119bfabd`,
-associated with exactly the two existing private route tables. A gateway
+shared NAT Gateway.** Production already has one, associated with exactly the
+two existing private route tables. A gateway
 endpoint is per-VPC per-service, so the batch cluster cannot stand up its own
 alongside it: the batch route tables have to be added to that endpoint's
 associations. Task 3.1 therefore decided more than it appeared to.

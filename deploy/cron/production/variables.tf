@@ -31,11 +31,19 @@ variable "test_buckets" {
     Test buckets (E7), keyed by the cron/config/config.yaml field each
     corresponds to. Named after their production counterparts with a -test
     suffix so a bucket list is self-explanatory without a lookup table.
+
+    cii_data joined the original three once group 5 gave the CII worker its
+    own Pod Identity role: E7 had excluded it on the grounds that only a
+    separate, lower-frequency CronJob writes it, but "written by one job" is
+    not "safe to write during verification". Task 9.6 exercises that job, and
+    without a test counterpart it would have to write the adopted production
+    bucket to do so.
   EOT
   type        = map(string)
   default = {
     cron_results = "ossf-scorecard-cron-results-test"
     data2        = "ossf-scorecard-data2-test"
     rawdata      = "ossf-scorecard-rawdata-test"
+    cii_data     = "ossf-scorecard-cii-data-test"
   }
 }

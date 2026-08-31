@@ -1,13 +1,21 @@
 # Secrets Manager containers for the batch (scanning) plane.
 #
 # The serving plane's secrets module (deploy/api/modules/secrets) deliberately
-# excludes these: it reads exactly one credential (FASTLY_PURGE_TOKEN), and its
-# own comment says creating github/gitlab there would put the batch plane's
-# secrets in the serving plane's module, which is the wrong place per
-# aws-serving's plane-independence requirement. This root gives them their own
-# home instead of leaving them undeclared, which is what migrate-api 6.0a
-# flagged: the destination is decided (AWS Secrets Manager, this account), but
-# no naming scheme or IAM policy exists yet.
+# excludes github and gitlab, and its own comment says why: creating them there
+# would put the batch plane's secrets in the serving plane's module, which is
+# the wrong place per aws-serving's plane-independence requirement. This root
+# gives them their own home instead of leaving them undeclared, which is what
+# migrate-api 6.0a flagged: the destination is decided (AWS Secrets Manager,
+# this account), but no naming scheme or IAM policy exists yet.
+#
+# fastly appears in BOTH planes, which looks like the duplication that module's
+# comment warns against and is not. Both planes purge the same CDN -- the API
+# on POST, the batch worker on each result it writes -- but they are two
+# consumers, and one Fastly token per consumer means either can be revoked or
+# rotated without taking the other down. Sharing one container across two roots
+# would have meant a cross-root state read for a credential, and a rotation
+# that stops the corpus and the API in the same instant. Load them out of band
+# with separate tokens; the value never enters state either way.
 #
 # Like its sibling, this declares containers only. No aws_secretsmanager_secret_version
 # here -- load values out of band, e.g. with scripts/cutover/load-secrets.sh.
@@ -74,6 +82,9 @@ module "secrets" {
     }
     gitlab = {
       description = "GitLab auth token. Scorecard scans GitLab repositories with this."
+    }
+    fastly = {
+      description = "Fastly purge token. The batch worker invalidates the CDN for each result it writes (cron/internal/worker/main.go)."
     }
   }
 }

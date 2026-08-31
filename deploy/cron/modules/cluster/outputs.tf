@@ -23,9 +23,28 @@ output "worker_service_account" {
   value       = var.worker_service_account
 }
 
+output "cii_service_account" {
+  description = "Group 7.1 must set this as cii.yaml's serviceAccountName."
+  value       = var.cii_service_account
+}
+
 output "github_server_service_account" {
   description = "Group 7.1 must set this as auth.yaml's serviceAccountName."
   value       = var.github_server_service_account
+}
+
+output "node_pool_label" {
+  description = <<-EOT
+    The node label both pools carry, and the taint key the worker pool
+    carries. Group 7.1 needs it for worker.yaml's toleration and for every
+    workload's nodeSelector.
+  EOT
+  value = {
+    key          = local.pool_key
+    system_value = "system"
+    worker_value = "worker"
+    worker_taint = "${local.pool_key}=worker:NoSchedule"
+  }
 }
 
 output "namespace" {

@@ -50,14 +50,26 @@ output "cluster_endpoint" {
 
 output "workload_service_accounts" {
   description = <<-EOT
-    Group 7.1 MUST set these as serviceAccountName in
-    controller.yaml/worker.yaml/auth.yaml -- see
-    deploy/cron/modules/cluster's header comment for why a shared "default"
-    ServiceAccount across three workloads cannot work under Pod Identity.
+    Group 7.1 MUST create these ServiceAccounts and set them as
+    serviceAccountName in controller.yaml/worker.yaml/cii.yaml/auth.yaml --
+    see deploy/cron/modules/cluster's header comment for why a shared
+    "default" ServiceAccount across four workloads cannot work under Pod
+    Identity.
   EOT
   value = {
     controller    = module.cluster.controller_service_account
     worker        = module.cluster.worker_service_account
+    cii           = module.cluster.cii_service_account
     github_server = module.cluster.github_server_service_account
   }
+}
+
+output "node_pool_label" {
+  description = <<-EOT
+    The node label both pools carry and the taint the worker pool carries.
+    Group 7.1 needs both: a nodeSelector on all four workloads, and a
+    toleration on worker.yaml (E1). Without the toleration the worker
+    Deployment stays Pending.
+  EOT
+  value       = module.cluster.node_pool_label
 }

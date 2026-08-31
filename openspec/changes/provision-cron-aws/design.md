@@ -90,10 +90,36 @@ EKS is the lower-rewrite landing zone; under a one-person time budget that is
 not a minor consideration.
 
 Two node groups, not one: a small system pool for the controller (a
-once-a-week CronJob) and the GitHub token-pool server (a small, always-on
-Deployment), and a separate worker pool sized to today's GKE baseline of 14
-workers. Matches `provision-aws`'s **A8** pattern — start at the known
-baseline, tune after verification, not autoscaling from day one.
+once-a-week CronJob) and the GitHub token-pool server (a Deployment that
+`cron/k8s/auth.yaml` currently scales to zero replicas, so "always-on" is
+its shape rather than its present state), and a separate worker pool sized to
+today's GKE baseline of 14 workers. Matches `provision-aws`'s **A8** pattern —
+start at the known baseline, tune after verification, not autoscaling from
+day one.
+
+**The split is enforced, not merely expressed.** Two node groups with nothing
+distinguishing them are one pool wearing two names: the scheduler would be
+free to place 14 scanning pods on the system node and the controller on a
+worker node, recreating precisely the contention that motivated **E1**. Both
+pools therefore carry a `scorecard.dev/pool` label and the worker pool carries
+a matching `NoSchedule` taint, so a workload lands in the wrong pool only if
+someone writes a toleration saying so. The cost is a second requirement on
+group 7.1's manifest edit — a toleration on `worker.yaml`, `nodeSelector` on
+all four — and the failure mode if it is forgotten is pods stuck `Pending`,
+which is loud. The alternative failure mode, silent contention under load,
+is the one that would be discovered during a full-corpus run.
+
+**Version and posture.** The cluster runs the newest Kubernetes version on
+EKS standard support (1.36 as of 2026-08-31). This is worth stating because
+the default a draft reaches for is whatever version was current when the
+pattern was learned, and an EKS control plane on *extended* support costs
+roughly six times the standard rate — more per month, on its own, than the
+second NAT Gateway **E5** declined to buy. The API endpoint is reachable both
+privately (so node traffic does not transit the shared NAT Gateway and incur
+its data processing) and publicly (group 8's CI runs on GitHub-hosted runners
+with no stable egress range to allowlist, so IAM and EKS access entries are
+the access control, not the network). Control-plane `api`/`audit`/
+`authenticator` logs are on, with finite retention.
 
 ## Queue
 
@@ -165,14 +191,25 @@ one `-target` mistake or one deleted block away from deletion, and OpenTofu
 cannot distinguish "this should not exist" from "someone removed the block
 that declared it."
 
-**E7 — three new buckets, genuinely created, for testing without touching
+**E7 — four new buckets, genuinely created, for testing without touching
 production data.** Cross-referencing `cron/config/config.yaml` against the
 six adopted buckets: a normal scan cycle writes to exactly three —
 `result-data-bucket-url` (`data2`, shard/completion state),
 `api-results-bucket-url` (`cron-results`), and `raw-result-data-bucket-url`
-(`rawdata`). `input-projects` is read-only from the controller's side and
-`cii-data` is written only by the separate, lower-frequency CII cronjob, so
-neither gets a test counterpart yet.
+(`rawdata`). `input-projects` is read-only from the controller's side, so it
+gets no counterpart: reading the real inventory during verification carries
+no write risk.
+
+`cii-data` is the fourth, and it was not in the original three. This decision
+first excluded it on the grounds that only the separate, lower-frequency CII
+CronJob writes it — true, and not the question. Group 5 had to give that
+CronJob a Pod Identity role, and the role has to point somewhere: with no
+test counterpart, the only bucket it could write during task 9.6's
+verification cycle is the adopted production one. "Written by one infrequent
+job" is not "safe to write while proving the plane works." A fourth test
+bucket costs almost nothing and keeps the invariant task 5.6 rests on —
+that no policy in this change names a production bucket — true for every
+workload rather than three out of four.
 
 `cron-results` is the most dangerous of the three to test against directly:
 it is the *same bucket* `deploy/api` reads as `SCORECARD_CRON_RESULTS_BUCKET_URL`,
@@ -180,10 +217,10 @@ the live API's fallback for every repository without a self-published
 result. A test write there can surface in a real `api.scorecard.dev`
 response — not a corpus-integrity problem, a live-serving-correctness one.
 
-Proposed names, to confirm during scaffolding: `ossf-scorecard-cron-results-test`,
-`ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test` — the production
+Names: `ossf-scorecard-cron-results-test`, `ossf-scorecard-data2-test`,
+`ossf-scorecard-rawdata-test`, `ossf-scorecard-cii-data-test` — the production
 names with a `-test` suffix, so a bucket list is self-explanatory without a
-lookup table. These three *are* declared as OpenTofu resources; **E6**'s
+lookup table. These four *are* declared as OpenTofu resources; **E6**'s
 "don't declare what you didn't create" reasoning does not apply to buckets
 this change creates.
 
@@ -274,6 +311,25 @@ Converting them into `kubernetes_manifest` Terraform resources would trade
 away the one property that made EKS the right call under a one-person time
 budget (**E1**) for no compensating benefit: the manifests port with registry
 references and node-selectors adjusted, not rewritten.
+
+**Granting a secret is not delivering it, and only one of those is done.**
+The manifests consume credentials as *Kubernetes* Secrets — `worker.yaml`
+resolves `GITHUB_APP_ID` through a `secretKeyRef` and mounts the App key as a
+file. Pod Identity grants the worker's role `secretsmanager:GetSecretValue`,
+which is necessary and which the eventual mechanism will authenticate with,
+but nothing in the cluster yet translates a Secrets Manager secret into the
+Kubernetes Secret those manifests read. Group 7.2 owns that choice (the
+Secrets Store CSI driver with the AWS provider is the obvious candidate, and
+authenticates via exactly this Pod Identity). Recorded here so the IAM grant
+is not mistaken for a working credential path.
+
+Which workloads need credentials at all was derived rather than assumed, and
+the answer is narrower than the manifest count suggests: the worker reads
+GitHub, GitLab and Fastly; `scorecard-github-server` reads GitHub only; the
+controller and the CII worker read **none** — there is no `os.Getenv` in
+`cron/internal/controller/` or `cron/internal/cii/`, and neither manifest
+carries a `secretKeyRef`. An earlier draft of group 5 attached the combined
+secrets policy to the controller anyway. Only the worker has it now.
 
 The controller's existing narrow RBAC (`Role`/`RoleBinding` scoped to `get`,
 `patch` on the `scorecard-batch-worker` Deployment, used to trigger a rollout

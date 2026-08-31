@@ -136,8 +136,9 @@ attribute, CloudWatch and route-table sections the first script has none of.
       two association resources against the same shared S3 gateway endpoint
       — four associations on one endpoint total, no conflict, confirming the
       association-resource split's whole premise under a real apply.**
-- [x] 3.4 Create the three test buckets (**E7**): `ossf-scorecard-cron-results-test`,
-      `ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test`. Private,
+- [x] 3.4 Create the test buckets (**E7**): `ossf-scorecard-cron-results-test`,
+      `ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test`, and
+      `ossf-scorecard-cii-data-test`. Private,
       versioning on (unlike the adopted production buckets, which have it
       off — no reason to inherit that gap in something created fresh).
       **Written in `deploy/cron/production/main.tf` via `var.test_buckets`,
@@ -146,7 +147,10 @@ attribute, CloudWatch and route-table sections the first script has none of.
       style minus the state bucket's `prevent_destroy` and
       deny-insecure-transport policy — not warranted for buckets this
       disposable. Applied 2026-08-31, all three created empty and versioned
-      as planned.**
+      as planned. `cii-data` was added to `var.test_buckets` afterwards, when
+      group 5 gave the CII worker a role and it had nowhere safe to write —
+      see the amended **E7**; it is the one bucket in this task not yet
+      applied.**
 
 ## 4. Queue
 
@@ -186,16 +190,25 @@ attribute, CloudWatch and route-table sections the first script has none of.
       flag matters: under API auth mode nobody has cluster access by
       default, not even the applying principal, so without it whoever runs
       `tofu apply` would create a cluster they cannot immediately `kubectl`
-      into. Cluster version defaulted to a starting pin (not verified
-      against AWS's currently-supported versions at apply time — do that
-      before applying).**
+      into. Version pinned to **1.36**, the newest on EKS standard support
+      as of 2026-08-31 — an earlier draft pinned 1.31, whose standard
+      support ended in 2025 and which would have billed the control plane at
+      the extended-support rate, roughly six times standard and more per
+      month than the second NAT Gateway **E5** declined to buy. Endpoint
+      reachable privately (node traffic stays off the shared NAT Gateway)
+      and publicly (group 8's CI has no stable egress range to allowlist, so
+      IAM is the control, not the network). Control-plane `api`/`audit`/
+      `authenticator` logs enabled into a declared log group with finite
+      retention, rather than EKS's silent never-expire default.**
 - [x] 5.2 System node group: sized for the controller CronJob (bursts to one
       pod once a week) and the `scorecard-github-server` Deployment
       (always-on, small).
       **`aws_eks_node_group.system`, defaulted small (starting instance
-      type/count, tunable — A8). One IAM node role shared by both node
-      groups; per-workload access lives in Pod Identity, not node-level
-      IAM.**
+      type/count, tunable — A8), two nodes rather than one because CoreDNS
+      runs two replicas and wants two nodes to spread across. Untainted, so
+      cluster DaemonSets and add-on components land here. One IAM node role
+      shared by both node groups; per-workload access lives in Pod Identity,
+      not node-level IAM.**
 - [x] 5.3 Worker node group: sized for 14 workers (**E1**'s baseline),
       matching the current GKE `scorecard-batch-worker` Deployment replica
       count.
@@ -204,37 +217,73 @@ attribute, CloudWatch and route-table sections the first script has none of.
       manifest to size nodes against — instance type/count are a defensible
       starting guess (A8), not derived from anything. 14 is the Deployment
       replica count group 7 ports; this task is about how many *nodes* host
-      those pods, a separate number.**
+      those pods, a separate number. Sized so each of the 14 pods gets
+      roughly a vCPU and 4 GiB, with ephemeral storage well above EKS's
+      20 GiB default — worker pods clone repositories to local disk, several
+      per node, and a full volume evicts pods rather than failing one scan.
+      This is the plane's largest cost lever; revisit against real
+      utilisation after group 9. Carries a `NoSchedule` taint keyed on the
+      same `scorecard.dev/pool` label both pools set: without it the two-pool
+      split is decorative, since nothing would stop 14 scanning pods landing
+      on the system node. Group 7.1 owes `worker.yaml` the matching
+      toleration.**
 - [x] 5.4 Pod Identity associations: a role per workload
-      (controller/worker/github-server), each scoped to exactly what that
-      workload needs — the queue actions its role requires, the buckets it
-      reads/writes, and (worker, controller) `deploy/cron/secrets`'
+      (controller/worker/CII worker/github-server), each scoped to exactly
+      what that workload needs — the queue actions its role requires, the
+      buckets it reads/writes, and (worker only) `deploy/cron/secrets`'
       `read_policy_json` output.
-      **Three roles, three `aws_eks_pod_identity_association` resources.
+      **Four roles, four `aws_eks_pod_identity_association` resources — one
+      per `cron/k8s/*.yaml` workload. An earlier draft wrote three and
+      omitted the CII worker, which would have left `cii.yaml` falling back
+      to the node role and unable to write anything at all.
       controller: `sqs:SendMessage`/`GetQueueAttributes` on the main queue,
       read-only on the adopted `input-projects` bucket (no test counterpart
-      — E7), read/write on the `data2` test bucket (shard/completion
-      state), plus the combined secrets read policy. worker:
+      — E7), read/write on the `data2` test bucket (shard/completion state),
+      and **no secrets policy** — the same draft attached one, but there is
+      no `os.Getenv` anywhere in `cron/internal/controller/` and
+      `controller.yaml` carries no `secretKeyRef`, so it reads no credential.
+      worker:
       `sqs:ReceiveMessage`/`DeleteMessage`/`ChangeMessageVisibility`/`GetQueueAttributes`
-      on the main queue, read/write on all three test buckets, plus the
-      combined secrets read policy. `scorecard-github-server`: no queue, no
-      bucket — a policy scoped to *only* the github secret, narrower than
-      controller/worker's combined policy, since it has no business reading
-      the gitlab credential. None of the four `deploy/api` roles from
-      `provision-aws`, the DLQ, or any of the six adopted production
-      buckets appear in any policy this task wrote — that absence is what
-      5.6 verifies.
-      **Load-bearing finding for group 7.1, not yet acted on there:** none
-      of `cron/k8s/{controller,worker,auth}.yaml` sets `serviceAccountName`
-      today, so all three implicitly share the `default` ServiceAccount.
-      Pod Identity associates one role per (cluster, namespace, service
-      account) tuple — three workloads on one shared ServiceAccount could
-      only ever get one shared role. Every association above names a
+      on the main queue, read/write on the `cron-results`/`data2`/`rawdata`
+      test buckets (not `cii-data-test` — that belongs to the CII worker
+      alone), plus the combined secrets read policy. CII worker: the
+      narrowest of the four — read/write on `cii-data-test` and nothing
+      else, since `cron/internal/cii/main.go` fetches the OpenSSF Best
+      Practices pages over plain HTTP and writes one bucket, with no queue
+      and no credential. `scorecard-github-server`: no queue, no bucket — a
+      policy scoped to *only* the github secret, narrower than the worker's
+      combined policy, since it has no business reading the gitlab or fastly
+      credentials. None of the `deploy/api` roles from `provision-aws`, the
+      DLQ, or any of the six adopted production buckets appear in any policy
+      this task wrote — that absence is what 5.6 verifies.
+      **A credential the manifests need that no root created:**
+      `worker.yaml` sets `FASTLY_PURGE_TOKEN`, and `deploy/cron/secrets`
+      created only github and gitlab. Added `fastly` there rather than
+      reading `deploy/api`'s across roots — two planes purging the same CDN
+      are two consumers, and one token each means either can be rotated
+      without taking the other down. It is optional at runtime:
+      `cron/internal/worker/main.go` logs "CDN purging disabled" and
+      continues with a no-op client when the variable is unset, which is the
+      correct behaviour during group 9 anyway. `deploy/cron/secrets` applied
+      2026-08-31 (one secret added, nothing else touched) and the value
+      loaded out of band; the worker's policy now covers all three
+      credentials.
+      **Load-bearing findings for group 7.1, not yet acted on there:** none
+      of `cron/k8s/{controller,worker,cii,auth}.yaml` sets
+      `serviceAccountName` today, so all four implicitly share the `default`
+      ServiceAccount. Pod Identity associates one role per (cluster,
+      namespace, service account) tuple — four workloads on one shared
+      ServiceAccount could only ever get one shared role, handing each
+      workload every other one's access. Every association above names a
       workload-specific ServiceAccount (`scorecard-batch-controller`,
-      `scorecard-batch-worker`, `scorecard-github-server`) that does not
-      exist in the manifests yet; task 7.1 must add it to each, and
-      `controller.yaml`'s `RoleBinding` subject needs the same update, away
-      from `default`.**
+      `scorecard-batch-worker`, `scorecard-cii-worker`,
+      `scorecard-github-server`) that does not exist in the manifests yet;
+      7.1 must create each and set it, and `controller.yaml`'s `RoleBinding`
+      subject needs the same update, away from `default`. Separately, the
+      IAM grant is not a delivery mechanism: the manifests read credentials
+      as *Kubernetes* Secrets (`secretKeyRef`, and a mounted file for the
+      GitHub App key), and nothing yet translates Secrets Manager into those
+      — see 7.2.**
 - [x] 5.5 The controller's Kubernetes RBAC (`Role`/`RoleBinding` scoped to
       `get`, `patch` on the `scorecard-batch-worker` Deployment) needs no
       AWS-side IAM equivalent — verify it applies to EKS's control plane
@@ -257,11 +306,11 @@ attribute, CloudWatch and route-table sections the first script has none of.
       ARNs — reviewed directly against the module's source, not inferred.
       That is necessary but not sufficient: a policy that never grants
       access is not the same as a runtime `AccessDenied` observed from a
-      running pod. The actual behavioral check — a pod assuming the worker
-      role and attempting a write against a production bucket or a receive
-      against the DLQ — is group 9's job (tasks 9.4/9.6 already cover
-      adjacent ground); this task's AWS-side half is done, its verification
-      half is deferred there rather than invented here.
+      running pod. This task's AWS-side half is done; the behavioral half is
+      **task 9.9**, added for the purpose. An earlier draft deferred it to
+      "9.4/9.6, which cover adjacent ground" — they do not: 9.4 checks
+      output consistency and 9.6 runs the CII cycle, and neither would fail
+      if a role turned out to hold a grant it should not.
 
 ## 6. Code
 
@@ -286,15 +335,36 @@ attribute, CloudWatch and route-table sections the first script has none of.
 ## 7. Workload manifests
 
 - [ ] 7.1 Port `cron/k8s/controller.yaml`, `worker.yaml`, `cii.yaml`,
-      `auth.yaml` for EKS: node-selector/affinity for the two-node-group
-      split (**E1**), the new `awssqs://` topic/subscription URLs, the AWS
-      config overlay's bucket URLs (`s3://...` for the three write targets).
-      Registry references already point at `ghcr.io` — no image changes.
+      `auth.yaml` for EKS: the new `awssqs://` topic/subscription URLs and
+      the AWS config overlay's bucket URLs (`s3://...`). Registry references
+      already point at `ghcr.io` — no image changes. Three things group 5
+      requires here, none of them optional:
+      - A distinct `ServiceAccount` object per manifest, with
+        `serviceAccountName` set to match the cluster module's
+        `workload_service_accounts` output — `scorecard-batch-controller`,
+        `scorecard-batch-worker`, `scorecard-cii-worker`,
+        `scorecard-github-server`. All four currently run as `default`, and
+        Pod Identity cannot give four workloads on one ServiceAccount four
+        different roles.
+      - `controller.yaml`'s `RoleBinding` subject repointed from
+        `ServiceAccount: default` to the controller's own.
+      - `nodeSelector` on all four for the `scorecard.dev/pool` label, plus
+        a toleration on `worker.yaml` for the worker pool's `NoSchedule`
+        taint (**E1**). Without the toleration the worker Deployment stays
+        `Pending` — deliberately loud.
 - [ ] 7.2 Add an AWS config overlay (e.g. `deploy/cron/config-aws.yaml` or a
       ConfigMap generated from one) analogous to `cron/config/config.yaml`,
       pointing at the test buckets (**E7**) until group 9 passes, and leaving
       BigQuery fields disabled/absent — this change does not deploy the
       transfer jobs.
+      **Also owns the credential delivery mechanism, which group 5 grants
+      but does not build.** `worker.yaml` and `auth.yaml` read credentials as
+      Kubernetes Secrets (`secretKeyRef`, and a mounted file for the GitHub
+      App key); nothing in the cluster translates a Secrets Manager secret
+      into one. The Secrets Store CSI driver with the AWS provider is the
+      obvious candidate and authenticates via exactly the Pod Identity 5.4
+      set up. Until this lands, the `secretsmanager:GetSecretValue` grants
+      are a permission with no caller.
 - [ ] 7.3 Confirm the `*.release.yaml` tier and `transfer*.yaml` are **not**
       ported — out of scope (proposal non-goals).
 
@@ -326,11 +396,13 @@ attribute, CloudWatch and route-table sections the first script has none of.
 - [ ] 9.5 Confirm the DLQ receives a message that permanently fails (e.g. a
       deliberately malformed shard) after `maxReceiveCount` retries, rather
       than looping forever.
-- [ ] 9.6 Confirm the CII worker completes one cycle against the test
-      `cii-data` path (or documents why it was left pointed at the read-only
-      production bucket, if a CII-specific test bucket turns out unnecessary
-      — CII is lower-frequency and lower-risk per **E7**'s reasoning).
-- [ ] 9.7 Only after 9.1–9.6 pass: repoint the config overlay at the six
+- [ ] 9.6 Confirm the CII worker completes one cycle against
+      `ossf-scorecard-cii-data-test`. The earlier "or document why it was
+      left pointed at the production bucket" escape is gone: group 5 gave
+      the CII worker its own Pod Identity role, the amended **E7** gave it
+      its own test bucket, and its role is scoped to that bucket alone, so
+      writing production is no longer something it can do.
+- [ ] 9.7 Only after 9.1–9.6 and 9.9 pass: repoint the config overlay at the six
       production buckets and the real `projects.csv`/`gitlab-projects.csv`
       inventories, but do **not** enable the production `cron/k8s/*.yaml`
       schedules yet — that activation, and the community notice question it
@@ -338,6 +410,15 @@ attribute, CloudWatch and route-table sections the first script has none of.
       automatic consequence of verification passing.
 - [ ] 9.8 `tofu fmt -check -recursive -diff deploy/cron/` and
       `tofu validate` (per-root, `-backend=false`) clean.
+- [ ] 9.9 Verify denial at runtime, closing task 5.6's behavioral half. From
+      a pod running under each role, confirm an actual `AccessDenied` — not
+      merely an absent grant — for: the worker writing any of the six
+      adopted production buckets; the worker calling `ReceiveMessage` on the
+      DLQ; the CII worker touching any bucket but `cii-data-test`; the
+      controller writing `cron-results-test` or `rawdata-test`; and any of
+      the four reading a `deploy/api` secret. Run this **before** 9.7
+      repoints anything at production, since 9.7 legitimately widens the
+      first of those grants and the check stops being meaningful after it.
 
 ## 10. Documentation
 

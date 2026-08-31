@@ -150,14 +150,30 @@ resource "aws_route_table_association" "private" {
 # buckets (A5). Without it every object read is NAT egress billed per gigabyte,
 # on a service whose whole workload is object reads. The account has no VPC
 # endpoints today, so this is built rather than adopted.
+#
+# route_table_ids is intentionally NOT set here. A gateway endpoint is
+# per-VPC-per-service, and the batch plane (provision-cron-aws, E5) shares this
+# VPC and this endpoint rather than standing up its own. That root reads
+# vpc_id/s3_endpoint_id via terraform_remote_state and associates its own
+# route tables with aws_vpc_endpoint_route_table_association below -- a
+# separate resource per table, not the route_table_ids attribute, because that
+# attribute is a full-replacement list: whichever root sets it would silently
+# drop any association the other root created on its next apply. This root
+# manages its own two associations the same way, so both roots use the same
+# mechanism rather than one being a special case.
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
 
-  route_table_ids = aws_route_table.private[*].id
-
   tags = merge(var.tags, { Name = "${var.name}-s3" })
+}
+
+resource "aws_vpc_endpoint_route_table_association" "s3_private" {
+  count = length(aws_route_table.private)
+
+  vpc_endpoint_id = aws_vpc_endpoint.s3.id
+  route_table_id  = aws_route_table.private[count.index].id
 }
 
 data "aws_region" "current" {}

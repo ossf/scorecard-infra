@@ -219,23 +219,48 @@ shared NAT Gateway.** Production already has one, `vpce-0cc8a7b4c119bfabd`,
 associated with exactly the two existing private route tables. A gateway
 endpoint is per-VPC per-service, so the batch cluster cannot stand up its own
 alongside it: the batch route tables have to be added to that endpoint's
-associations. Task 3.1 therefore decides more than it appears to. A
-`terraform_remote_state` data source can *read* the endpoint's ID but cannot
-append to its associations without two root modules contending for ownership
-of one resource — so the mechanism has to be something `deploy/api` cooperates
-with, such as its network module taking extra route-table IDs as an input.
+associations. Task 3.1 therefore decided more than it appeared to.
 
-Accepted tradeoffs, stated rather than hidden: an edit to
-`deploy/api/modules/network` (a new AZ, a CIDR resize) now affects both
-planes' root modules, reintroducing a sliver of the cross-change coordination
-the cluster split was meant to avoid — and the endpoint association above is
-the first concrete instance of exactly that, arriving before any code is
-written. A NAT Gateway outage, or a connection-tracking limit hit during
-simultaneous heavy egress from both planes, would be a shared-fate event; note
-that production runs a **single** NAT Gateway serving both AZs today, so the
-batch plane inherits that single point of failure rather than introducing it.
-None of this outweighs the cost of a second NAT Gateway. Revisit if any of it
-causes real friction — this is reversible, not structural.
+**Resolved (task 3.1): `deploy/cron/production` reads `deploy/api/production`'s
+state via `terraform_remote_state` for VPC context (`vpc_id`, existing subnet
+CIDRs, the endpoint ID) — read-only, one direction, no new coupling beyond
+what is read. The endpoint's associations are split off the `aws_vpc_endpoint`
+resource itself and onto the AWS provider's dedicated
+`aws_vpc_endpoint_route_table_association` resource**, precisely because that
+resource exists to let two Terraform roots each own association rows against
+the same endpoint without fighting over an authoritative list — unlike
+`aws_vpc_endpoint.route_table_ids`, which is a full-replacement attribute: any
+root declaring it would silently remove associations it didn't create on its
+next apply. `deploy/api/modules/network` gets a one-time edit — stop setting
+`route_table_ids` inline on `aws_vpc_endpoint.s3`, declare
+`aws_vpc_endpoint_route_table_association` for its own two existing private
+route tables instead (additive at the AWS API level; the associations
+themselves don't change) — and `deploy/cron/production` then declares its own
+association resources against the same endpoint ID for its own route tables.
+After that one edit, cron's route tables can change freely with no further
+edits to `deploy/api` ever again.
+
+This was chosen over the earlier draft here — an `additional_route_table_ids`
+input on `deploy/api/modules/network`, with `deploy/api/production` passing in
+cron's route table IDs — because that draft made every future change to
+cron's route tables require a follow-up apply of the serving plane's root.
+The association-resource split pays a one-time cost (the module edit) instead
+of a recurring one.
+
+Accepted tradeoffs, stated rather than hidden: the one-time edit to
+`deploy/api/modules/network` still touches a serving-plane module before any
+batch-plane code exists, reintroducing a sliver of the cross-change
+coordination the cluster split was meant to avoid — smaller than the
+recurring-apply draft, but not zero. It changes how `deploy/api/production`
+manages the endpoint's *existing* two associations (verify with a full
+`tofu plan`, no `-target`, before applying — this touches live serving-plane
+state) without changing their runtime effect. A NAT Gateway outage, or a
+connection-tracking limit hit during simultaneous heavy egress from both
+planes, would be a shared-fate event; note that production runs a **single**
+NAT Gateway serving both AZs today, so the batch plane inherits that single
+point of failure rather than introducing it. None of this outweighs the cost
+of a second NAT Gateway. Revisit if any of it causes real friction — this is
+reversible, not structural.
 
 ## Workload deployment
 

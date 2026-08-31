@@ -1,0 +1,171 @@
+# The AWS batch scanning plane's network and test-bucket resources.
+# provision-cron-aws groups 2-3. See openspec/changes/provision-cron-aws/.
+#
+# This root does not build its own VPC. E5 shares deploy/api's
+# scorecard-api-production VPC and its single NAT Gateway rather than
+# provisioning a second one -- cost-driven, not capacity-driven (design.md).
+# VPC context (vpc_id, the NAT Gateway to route through, the AZs to land in,
+# the S3 gateway endpoint to associate with) is read from that root's state
+# via terraform_remote_state, resolved in task 3.1. It is a read-only,
+# one-direction dependency: this root never writes into deploy/api's state,
+# and deploy/api/modules/network never references this one.
+#
+# The S3 gateway endpoint itself is not duplicated -- a gateway endpoint is
+# per-VPC-per-service, so a second one cannot coexist with deploy/api's. This
+# root instead adds its own aws_vpc_endpoint_route_table_association
+# resources against that endpoint's ID, the same mechanism
+# deploy/api/modules/network now uses for its own two associations, so
+# neither root's apply can silently drop the other's association by treating
+# route_table_ids as an authoritative full-replacement list.
+
+terraform {
+  required_version = ">= 1.10"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+
+  # Partial configuration; bucket supplied at init:
+  #   tofu init -backend-config=bucket=<state bucket>
+  backend "s3" {
+    key          = "cron/production/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
+
+provider "aws" {
+  region = var.region
+
+  default_tags {
+    tags = local.tags
+  }
+}
+
+locals {
+  tags = {
+    Project   = "scorecard"
+    Component = "cron"
+    ManagedBy = "opentofu"
+    Source    = "ossf/scorecard-infra//deploy/cron/production"
+  }
+
+  vpc_id         = data.terraform_remote_state.api_production.outputs.vpc_id
+  azs            = data.terraform_remote_state.api_production.outputs.availability_zones
+  s3_endpoint_id = data.terraform_remote_state.api_production.outputs.s3_endpoint_id
+
+  # single_nat_gateway defaults true on deploy/api/modules/network, so
+  # production has exactly one NAT Gateway; this shares it rather than
+  # picking per-AZ (E5).
+  nat_gateway_id = data.terraform_remote_state.api_production.outputs.nat_gateway_ids[0]
+}
+
+data "terraform_remote_state" "api_production" {
+  backend = "s3"
+
+  config = {
+    bucket = var.state_bucket
+    key    = "api/production/terraform.tfstate"
+    region = var.region
+  }
+}
+
+# --- Network: private subnets for the batch cluster, in the shared VPC -----
+
+resource "aws_subnet" "private" {
+  count = length(local.azs)
+
+  vpc_id            = local.vpc_id
+  cidr_block        = var.private_subnet_cidrs[count.index]
+  availability_zone = local.azs[count.index]
+
+  tags = merge(local.tags, {
+    Name = "scorecard-cron-production-private-${local.azs[count.index]}"
+    Tier = "private"
+  })
+}
+
+resource "aws_route_table" "private" {
+  count = length(local.azs)
+
+  vpc_id = local.vpc_id
+
+  tags = merge(local.tags, {
+    Name = "scorecard-cron-production-private-${local.azs[count.index]}"
+  })
+}
+
+resource "aws_route" "private_default" {
+  count = length(local.azs)
+
+  route_table_id         = aws_route_table.private[count.index].id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = local.nat_gateway_id
+}
+
+resource "aws_route_table_association" "private" {
+  count = length(aws_subnet.private)
+
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private[count.index].id
+}
+
+resource "aws_vpc_endpoint_route_table_association" "s3_private" {
+  count = length(aws_route_table.private)
+
+  vpc_endpoint_id = local.s3_endpoint_id
+  route_table_id  = aws_route_table.private[count.index].id
+}
+
+# --- Storage: three test buckets (E7), genuinely created ---------------------
+#
+# Not the six adopted corpus buckets (E6) -- those stay data sources in a
+# later task, never declared as resources here. These are new, so they get
+# versioning, which the 2026-08-31 capture confirmed is off on all six
+# adopted buckets: no reason to reproduce that gap in a bucket whose whole
+# purpose is catching a bad write before it reaches production.
+
+resource "aws_s3_bucket" "test" {
+  for_each = var.test_buckets
+
+  bucket = each.value
+
+  tags = merge(local.tags, { Name = each.value })
+}
+
+resource "aws_s3_bucket_versioning" "test" {
+  for_each = aws_s3_bucket.test
+
+  bucket = each.value.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "test" {
+  for_each = aws_s3_bucket.test
+
+  bucket = each.value.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "test" {
+  for_each = aws_s3_bucket.test
+
+  bucket = each.value.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}

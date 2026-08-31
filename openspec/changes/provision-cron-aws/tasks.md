@@ -55,33 +55,88 @@ attribute, CloudWatch and route-table sections the first script has none of.
 
 ## 2. Toolchain and scaffolding
 
-- [ ] 2.1 Create `deploy/cron/modules/{cluster,queue}/` and
+- [x] 2.1 Create `deploy/cron/modules/{cluster,queue}/` and
       `deploy/cron/production/`, each with its own `terraform` block pinning
       `required_version >= 1.10` (matching `deploy/api` and
       `deploy/cron/secrets`).
-- [ ] 2.2 `deploy/cron/production/`'s backend: S3, same state bucket
+      **`modules/cluster` and `modules/queue` are scaffolding only — a
+      `terraform` block and nothing else, since their resources are groups 5
+      and 4 respectively. `deploy/cron/production/` got its full network and
+      test-bucket content directly (see group 3), since 2.1's module list has
+      no `network` module — the batch plane attaches to an already-live VPC
+      it doesn't own, rather than building one, so those resources sit in the
+      root rather than a reusable module.**
+- [x] 2.2 `deploy/cron/production/`'s backend: S3, same state bucket
       `deploy/cron/secrets` uses, key `cron/production/terraform.tfstate`,
       `use_lockfile = true` (**E9**). No new bootstrap.
-- [ ] 2.3 Tag convention matches `deploy/cron/secrets`: `Project = "scorecard"`,
+- [x] 2.3 Tag convention matches `deploy/cron/secrets`: `Project = "scorecard"`,
       `Component = "cron"`, `ManagedBy = "opentofu"`,
       `Source = "ossf/scorecard-infra//deploy/cron/production"`.
 
 ## 3. Network
 
-- [ ] 3.1 Determine how `deploy/cron/production/` reaches `deploy/api`'s VPC
+- [x] 3.1 Determine how `deploy/cron/production/` reaches `deploy/api`'s VPC
       — a `terraform_remote_state` data source against `deploy/api`'s state,
       or a small shared network module both roots call. Decide before writing
       subnets (**E5**).
-- [ ] 3.2 Add private subnets and route tables for the batch cluster inside
+      **Decided with Stephen 2026-08-31: `terraform_remote_state` against
+      `deploy/api/production`'s state (`vpc_id`, subnet CIDRs, endpoint ID) —
+      read-only, one direction. For the S3 gateway endpoint's associations,
+      chose the association-resource split over design.md's original
+      `additional_route_table_ids`-input draft: `deploy/api/modules/network`
+      gets a one-time edit to stop setting `route_table_ids` inline on
+      `aws_vpc_endpoint.s3` and declare `aws_vpc_endpoint_route_table_association`
+      for its own two existing private route tables instead; `deploy/cron/production`
+      declares its own association resources against the same endpoint ID.
+      One-time edit to `deploy/api`, not a recurring one every time cron's
+      route tables change. See design.md's E5 section for the full reasoning.**
+- [x] 3.2 Add private subnets and route tables for the batch cluster inside
       that VPC, routed through the existing NAT Gateway. No new NAT Gateway,
       no new Elastic IP.
-- [ ] 3.3 Confirm the existing S3 gateway endpoint (if `deploy/api` has one)
-      covers the batch cluster's new subnets, or add the batch subnets to its
-      route table association.
-- [ ] 3.4 Create the three test buckets (**E7**): `ossf-scorecard-cron-results-test`,
+      **Written in `deploy/cron/production/main.tf`: two private subnets
+      (`var.private_subnet_cidrs`, defaulting to the two `/20`s design.md
+      picked), one route table per AZ, each routed to
+      `data.terraform_remote_state.api_production.outputs.nat_gateway_ids[0]`
+      — index `[0]` because `deploy/api/modules/network`'s
+      `single_nat_gateway` defaults true, so production has exactly one.
+      AZs come from that same remote-state read (`outputs.availability_zones`,
+      added in 3.3) rather than a second `aws_availability_zones` lookup, so
+      the two roots cannot resolve to different zones. `tofu validate`
+      (`-backend=false`) passes; not yet applied.**
+- [x] 3.3 Edit `deploy/api/modules/network`: replace `aws_vpc_endpoint.s3`'s
+      inline `route_table_ids` with `aws_vpc_endpoint_route_table_association`
+      resources for its own two private route tables (additive at the AWS API
+      level — same associations, different resource shape). Verify with a
+      full `tofu plan` (no `-target`) against `deploy/api/production` before
+      applying; this touches live serving-plane state. Then declare matching
+      `aws_vpc_endpoint_route_table_association` resources in
+      `deploy/cron/production` for the batch route tables from 3.2, against
+      the endpoint ID read via 3.1's remote-state data source.
+      **Both sides written. `deploy/api/modules/network/main.tf`'s
+      `aws_vpc_endpoint.s3` no longer sets `route_table_ids`; two
+      `aws_vpc_endpoint_route_table_association` resources cover its existing
+      two private route tables. `deploy/api/modules/network/outputs.tf`
+      gained `nat_gateway_ids`; `deploy/api/environments/production/outputs.tf`
+      gained `vpc_id`, `nat_gateway_ids`, `s3_endpoint_id`, and
+      `availability_zones` for 3.1/3.2 to read. `deploy/cron/production`
+      declares its own two association resources against the same endpoint
+      ID. `tofu validate` passes for both `environments/production` and
+      `environments/staging` (staging also calls `modules/network`, so the
+      edit had to stay safe for both — it is, since the resulting AWS-side
+      associations are unchanged, only the resource that manages them
+      changed). Applying `deploy/api/production` — the live serving-plane
+      state — is deliberately left for a human-run, reviewed
+      `tofu plan`/`apply`, not done as part of this task.**
+- [x] 3.4 Create the three test buckets (**E7**): `ossf-scorecard-cron-results-test`,
       `ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test`. Private,
       versioning on (unlike the adopted production buckets, which have it
       off — no reason to inherit that gap in something created fresh).
+      **Written in `deploy/cron/production/main.tf` via `var.test_buckets`,
+      names as proposed. Versioning, AES256 SSE, and a full public-access
+      block on each, matching `deploy/api/modules/state-backend`'s bucket
+      style minus the state bucket's `prevent_destroy` and
+      deny-insecure-transport policy — not warranted for buckets this
+      disposable. Not yet applied.**
 
 ## 4. Queue
 

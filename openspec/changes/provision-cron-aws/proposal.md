@@ -134,7 +134,10 @@ batch-specific extension needed there.
 1. **Whether the release-test environment still exists at all.** Establishing
    this is a prerequisite to porting the release-test tier, not this change's
    job to answer.
-2. **What the `openssf-scorecard` SQS queue actually is.** Task group 1.
+2. ~~**What the `openssf-scorecard` SQS queue actually is.**~~ Answered by
+   task group 1 on 2026-08-31: a tuned but never-used placeholder, created
+   2026-08-26 and carrying no message on any day since. Not adopted; see
+   **E8**.
 3. **Node group sizing beyond the 14-worker baseline.** Tune after
    verification, not before — the same discipline `provision-aws`'s **A8**
    applied to ECS task count.

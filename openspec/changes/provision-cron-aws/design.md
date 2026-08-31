@@ -9,33 +9,72 @@ respectively.)
 
 ## What the account already contains
 
-Not captured fresh for this change — inherited from `provision-aws`'s
-2026-08-29 account capture (`openspec/changes/archive/2026-08-30-provision-aws/design.md`),
-which looked at the whole account, not just the serving plane. Task group 1
-confirms nothing has changed since rather than re-running discovery from
-zero.
+Captured fresh 2026-08-31 (task group 1) with `scripts/cutover/capture-aws.sh`
+and a new sibling, `scripts/cutover/capture-aws-batch.sh`. The sibling exists
+because four of group 1's questions have no section in the first script: it
+never calls DataSync, `sqs list-queues` returns a URL and nothing else, no AWS
+API reports "a consumer exists" (that is a CloudWatch question), and route
+tables — which **E5**'s shared-VPC plan turns on — are not captured at all.
 
-**All six corpus buckets already exist**, under their GCS names, with AWS
-DataSync actively writing to them: `ossf-scorecard-results`,
-`ossf-scorecard-cron-results`, `ossf-scorecard-data2`,
-`ossf-scorecard-rawdata`, `ossf-scorecard-input-projects`,
-`ossf-scorecard-cii-data`. `provision-aws` adopted the first two; this change
-adopts the rest.
+An earlier draft of this section inherited `provision-aws`'s 2026-08-29
+capture and proposed that group 1 merely confirm nothing had changed. That
+was the wrong bar, and re-running found why: `provision-aws` itself landed in
+between, so the account has legitimately moved, and three of the facts below
+are not what the inherited capture would have implied.
 
-**One SQS queue already exists**, `openssf-scorecard`, noted in that capture
-only as "it belongs to the batch plane, which this change does not touch."
-Nobody has looked closer since. Its name does not match
-`cron/config/config.yaml`'s topic name (`scorecard-batch-requests`) — see
-**E8**.
+**All six corpus buckets exist** in `us-east-1`, under their GCS names:
+`ossf-scorecard-results`, `ossf-scorecard-cron-results`,
+`ossf-scorecard-data2`, `ossf-scorecard-rawdata`,
+`ossf-scorecard-input-projects`, `ossf-scorecard-cii-data`. `provision-aws`
+adopted the first two; this change adopts the rest. All six share one shape:
+**versioning off**, no lifecycle configuration, no bucket policy, with
+encryption and a public-access block present. That confirms **E7**'s premise
+rather than assuming it. The **E9** state bucket, `ossf-scorecard-tfstate`,
+has versioning, lifecycle rules and a policy.
 
-**The Elastic IP quota is 5, shared by both planes' NAT gateways.** Already
-observed once; relevant here because it means there is no capacity reason to
-avoid sharing a NAT Gateway with the serving plane (**E5**).
+**The corpus is frozen exactly where the proposal says it is.** The newest
+date partition in both `data2` and `rawdata` is `2026.08.24/`, on a visible
+weekly cadence — matching the last completed cycle, with nothing written
+since.
+
+**DataSync replication is still running, and degrading.** Twenty tasks exist
+in three generations: an original GCS → `aboutcode-scorecard/<prefix>` set, a
+`*-local-s3-to-s3` set that fanned those prefixes out into the per-bucket
+buckets, and the six `*-direct-to-s3` tasks that supersede both. Only the last
+set is scheduled. Two of those six are not healthy: `results` has had its
+schedule **disabled** since 2026-08-29, deliberately, hours after the serving
+plane went live — replicating stale GCS content over the bucket the live API
+writes to would clobber it. `cron-results` moves ~787k files per run on an
+hourly schedule it cannot finish inside, so each run collides with the
+previous one and errors `FailedToLaunchScheduledTask`. Neither blocks this
+change; both are recorded because "still being written by DataSync" turned out
+to be three different answers depending on the bucket.
+
+**The pre-existing `openssf-scorecard` SQS queue has never carried a
+message.** See **E8**, which this capture resolves rather than leaves open.
+
+**`deploy/api` built two VPCs, not one** — `scorecard-api-staging`
+(`10.20.0.0/16`) and `scorecard-api-production` (`10.21.0.0/16`), each with
+its own NAT Gateway and its own S3 gateway endpoint. **E5** is written as
+though there were one; the batch plane shares the production VPC.
+
+**Three of five Elastic IPs are free.** `describe-addresses` returns six
+against a quota of 5 that has never been raised, which looks like a breach and
+is not: four are `RequesterManaged: true` under `amazon-elb`, sitting on the
+two load balancers' interfaces, and service-managed addresses do not count
+against `L-0263D0A3`. Only the two NAT Gateway EIPs are self-allocated, which
+`deploy/`'s single `aws_eip` declaration corroborates. Stated precisely
+because the six-against-five reading briefly turned into a capacity argument
+for **E5** during this very capture, and **E5** has no capacity argument — it
+is cost-driven, and that is enough.
 
 **No EKS cluster, no application IAM roles for the batch plane, and no SQS
-consumer exist.** Confirmed by the same capture: all 21 IAM roles in the
-account are service-linked or DataSync-created, and the only application
-secrets are `deploy/cron/secrets`'s `scorecard/cron/{github,gitlab}`.
+consumer exist.** Zero EKS clusters and zero Lambda event source mappings.
+None of the account's 29 IAM roles is a batch-plane application role: 8
+service-linked, 8 Application Migration, 7 `AWSDataSyncS3BucketAccess-*`, and
+the 6 serving-plane roles `provision-aws` created on 2026-08-29. The only
+application secrets remain `deploy/cron/secrets`'s
+`scorecard/cron/{github,gitlab}`.
 
 ## Compute
 
@@ -83,11 +122,38 @@ Subscriber selection becomes URL-scheme-based
 emulated default, so the same binary can run against either backend during
 the transition.
 
-**E8 — the pre-existing `openssf-scorecard` queue is investigated, not
-assumed.** It might be a leftover from an earlier, abandoned attempt at this
-same migration; a placeholder someone created intending to wire it up later;
-or already correctly shaped and simply undocumented. Task group 1 finds out
-before **E2** decides whether to adopt it or create a fresh queue + DLQ pair.
+**E8 — the pre-existing `openssf-scorecard` queue is a tuned but unwired
+placeholder, and is not adopted.** Resolved by task group 1 rather than
+assumed. Three candidate explanations went in — leftover from an abandoned
+attempt, placeholder awaiting wiring, or already correctly shaped and merely
+undocumented — and the capture settles it as the second:
+
+| | |
+|---|---|
+| Created | 2026-08-26 21:36Z, account **root**, via the console |
+| Tuned | 2026-08-28 14:04Z — `VisibilityTimeout` 30→3600, `ReceiveMessageWaitTimeSeconds` 0→20 (re-saved identically nine minutes later) |
+| Throughput | 0 sent, 0 received, 0 deleted — **every day since creation** |
+| Missing | no redrive policy, no tags, SSE off |
+
+Not a leftover: it postdates the start of this migration. Not correctly
+shaped: `RedrivePolicy` was submitted empty on all three calls, so no DLQ was
+ever intended, and **E2** requires one.
+
+**It is not adopted.** **E6**'s adopt-don't-create rule exists to keep
+OpenTofu from being one deleted block away from destroying the corpus; a queue
+holds no data and this one is provably empty, so that reasoning does not reach
+it. What adoption would actually cost is importing a hand-made resource whose
+policy, tags and redrive policy all get rewritten on the first apply — nearly
+every attribute — under a name matching neither `cron/config/config.yaml`'s
+topic (`scorecard-batch-requests`) nor its subscription
+(`scorecard-batch-worker`).
+
+What is worth keeping is the tuning, not the queue. Whoever set those two
+values understood the workload: a long visibility timeout because a scan can
+run long, and maximum long polling because workers poll continuously. Both
+carry into the new queue as **E3**'s starting values rather than being
+rediscovered. The existing queue is left in place — deleting someone else's
+resource is not this change's call — and recorded here as unmanaged.
 
 ## Storage
 
@@ -121,27 +187,55 @@ lookup table. These three *are* declared as OpenTofu resources; **E6**'s
 "don't declare what you didn't create" reasoning does not apply to buckets
 this change creates.
 
+They also get versioning, which the six adopted buckets do not have — the
+2026-08-31 capture confirms versioning is off on all six rather than leaving
+it assumed. Turning it on for the adopted buckets is out of scope (**E6**
+keeps this change out of their configuration entirely), but there is no reason
+to reproduce the gap in a bucket created fresh, least of all one whose purpose
+is catching a bad write before it reaches production.
+
 ## Network
 
-**E5 — shares `deploy/api`'s VPC and NAT Gateway; no second one is
-provisioned.** Cost-driven and confirmed directly: a dedicated VPC's NAT
-Gateway runs roughly $32-35/month plus data processing, on top of the
-~$110-145/month already budgeted for the serving plane in `provision-aws`,
-for isolation the cluster split (**E1**) already provides at the compute
-layer. The account capture's own note — "the Elastic IP quota is 5, which is
-the ceiling both planes share for NAT gateways" — shows this was anticipated
-before either plane had a NAT Gateway at all.
+**E5 — shares the `scorecard-api-production` VPC and its NAT Gateway; no
+second one is provisioned.** Cost-driven, and cost-driven only: a dedicated
+VPC's NAT Gateway runs roughly $32-35/month plus data processing, on top of
+the ~$110-145/month already budgeted for the serving plane in
+`provision-aws`, for isolation the cluster split (**E1**) already provides at
+the compute layer. There is no capacity argument alongside it — three of five
+Elastic IPs are free, so a second NAT Gateway is affordable in quota terms and
+simply not worth its price.
 
-The batch cluster gets its own private subnets and route tables inside the
-existing VPC; nothing about EKS vs ECS or worker vs task isolation depends on
-the network layer being separate too. Accepted tradeoffs, stated rather than
-hidden: an edit to `deploy/api/modules/network` (a new AZ, a CIDR resize) now
-affects both planes' root modules, reintroducing a sliver of the
-cross-change coordination the cluster split was meant to avoid; and a NAT
-Gateway outage or a connection-tracking limit hit during simultaneous heavy
-egress from both planes would be a shared-fate event. Neither outweighs the
-cost of a second NAT Gateway today. Revisit if either ever causes real
-friction — this is reversible, not structural.
+**Which VPC, specifically.** `deploy/api` built two — `scorecard-api-staging`
+(`10.20.0.0/16`) and `scorecard-api-production` (`10.21.0.0/16`) — and earlier
+drafts of this decision said "`deploy/api`'s VPC" as though that were
+unambiguous. The batch plane shares **production**, `10.21.0.0/16`, whose four
+existing `/20` subnets are `10.21.0.0` and `10.21.16.0` (public), `10.21.128.0`
+and `10.21.144.0` (private). `10.21.160.0/20` and `10.21.176.0/20` extend the
+private range for the batch cluster without colliding. Subnets-per-VPC and
+route-tables-per-VPC are both 200; neither constrains this.
+
+**The S3 gateway endpoint is the real coupling, and it is sharper than a
+shared NAT Gateway.** Production already has one, `vpce-0cc8a7b4c119bfabd`,
+associated with exactly the two existing private route tables. A gateway
+endpoint is per-VPC per-service, so the batch cluster cannot stand up its own
+alongside it: the batch route tables have to be added to that endpoint's
+associations. Task 3.1 therefore decides more than it appears to. A
+`terraform_remote_state` data source can *read* the endpoint's ID but cannot
+append to its associations without two root modules contending for ownership
+of one resource — so the mechanism has to be something `deploy/api` cooperates
+with, such as its network module taking extra route-table IDs as an input.
+
+Accepted tradeoffs, stated rather than hidden: an edit to
+`deploy/api/modules/network` (a new AZ, a CIDR resize) now affects both
+planes' root modules, reintroducing a sliver of the cross-change coordination
+the cluster split was meant to avoid — and the endpoint association above is
+the first concrete instance of exactly that, arriving before any code is
+written. A NAT Gateway outage, or a connection-tracking limit hit during
+simultaneous heavy egress from both planes, would be a shared-fate event; note
+that production runs a **single** NAT Gateway serving both AZs today, so the
+batch plane inherits that single point of failure rather than introducing it.
+None of this outweighs the cost of a second NAT Gateway. Revisit if any of it
+causes real friction — this is reversible, not structural.
 
 ## Workload deployment
 

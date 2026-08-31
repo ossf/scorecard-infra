@@ -4,25 +4,54 @@ Decision tags **E1**–**E9** are defined in `design.md`.
 
 ## 1. Discovery
 
-- [ ] 1.1 Confirm the six corpus buckets (`ossf-scorecard-results`,
+Run 2026-08-31 with `scripts/cutover/capture-aws.sh` and a new sibling,
+`scripts/cutover/capture-aws-batch.sh`, which covers the DataSync, SQS
+attribute, CloudWatch and route-table sections the first script has none of.
+
+- [x] 1.1 Confirm the six corpus buckets (`ossf-scorecard-results`,
       `ossf-scorecard-cron-results`, `ossf-scorecard-data2`,
       `ossf-scorecard-rawdata`, `ossf-scorecard-input-projects`,
       `ossf-scorecard-cii-data`) are still present and still being written by
       DataSync, as `provision-aws` 1.4 found on 2026-08-29. Re-run
       `scripts/cutover/capture-aws.sh` rather than trust a five-day-old
       capture.
-- [ ] 1.2 Investigate the `openssf-scorecard` SQS queue (**E8**): its
+      **All six present in `us-east-1`. Versioning off, lifecycle absent,
+      bucket policy absent, encryption and public-access-block present on
+      every one — confirming E7's premise rather than assuming it. Newest
+      date partition in `data2` and `rawdata` is `2026.08.24/`, matching the
+      frozen corpus exactly. DataSync is still running but degrading; see the
+      note under group 3.**
+- [x] 1.2 Investigate the `openssf-scorecard` SQS queue (**E8**): its
       attributes, redrive policy (if any), and message count. Determine
       whether it is a leftover from an earlier attempt, an unwired
       placeholder, or already correctly shaped. Decide adopt-vs-create before
       **E2** is implemented.
-- [ ] 1.3 Confirm no EKS cluster, no batch-plane application IAM roles, and no
+      **Unwired placeholder, and not an old one: created 2026-08-26 by the
+      account root user via the console, then tuned 2026-08-28
+      (`VisibilityTimeout` 30→3600, `ReceiveMessageWaitTimeSeconds` 0→20).
+      CloudWatch reports 0 sent / 0 received / 0 deleted on every day since
+      creation — it has never carried a message. No redrive policy, no tags,
+      SSE off, and its name matches neither `cron/config/config.yaml`'s topic
+      (`scorecard-batch-requests`) nor its subscription. See 4.1.**
+- [x] 1.3 Confirm no EKS cluster, no batch-plane application IAM roles, and no
       SQS consumer already exist, as `provision-aws` 1.7 found for the
       serving plane's equivalents.
-- [ ] 1.4 Confirm the Elastic IP quota (5, shared by both planes per
+      **Confirmed on all three. Zero EKS clusters. Of 29 IAM roles, none is a
+      batch-plane application role — 8 service-linked, 8 Application
+      Migration, 7 `AWSDataSyncS3BucketAccess-*`, 6 serving-plane roles
+      created 2026-08-29. No consumer: zero Lambda event source mappings, and
+      the queue's own receive count is zero for its whole lifetime.**
+- [x] 1.4 Confirm the Elastic IP quota (5, shared by both planes per
       `provision-aws` 1.7) has enough headroom for the batch cluster's node
       groups' egress, given the serving plane's NAT Gateway is being shared
       (**E5**) rather than doubled.
+      **Three of five free. `describe-addresses` returns six, which reads as a
+      breach of a quota that has never been raised; it is not. Four are
+      `RequesterManaged: true` under `amazon-elb`, on the two ALBs'
+      interfaces, and service-managed addresses do not count against
+      `L-0263D0A3`. Only the two NAT Gateway EIPs are self-allocated, which
+      `deploy/`'s single `aws_eip` declaration corroborates. E5 stands on cost
+      alone — there is no capacity argument for it.**
 
 ## 2. Toolchain and scaffolding
 

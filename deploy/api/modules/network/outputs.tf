@@ -26,3 +26,12 @@ output "s3_endpoint_id" {
   description = "S3 gateway endpoint. Object reads take this path, not NAT."
   value       = aws_vpc_endpoint.s3.id
 }
+
+output "nat_gateway_ids" {
+  description = <<-EOT
+    NAT Gateway resource IDs, for a route table outside this module to route
+    0.0.0.0/0 through the same gateway rather than provisioning a new one --
+    e.g. provision-cron-aws's batch plane, which shares this VPC (E5).
+  EOT
+  value       = aws_nat_gateway.this[*].id
+}

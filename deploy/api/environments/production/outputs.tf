@@ -28,6 +28,33 @@ output "nat_egress_ips" {
   value       = module.network.nat_public_ips
 }
 
+output "vpc_id" {
+  description = <<-EOT
+    Read by provision-cron-aws's deploy/cron/production via terraform_remote_state
+    (E5) -- the batch plane shares this VPC rather than provisioning its own.
+  EOT
+  value       = module.network.vpc_id
+}
+
+output "nat_gateway_ids" {
+  description = "Read by deploy/cron/production (E5) to route its private subnets through the existing NAT Gateway."
+  value       = module.network.nat_gateway_ids
+}
+
+output "s3_endpoint_id" {
+  description = "Read by deploy/cron/production (E5) to associate its own route tables with this VPC's single S3 gateway endpoint."
+  value       = module.network.s3_endpoint_id
+}
+
+output "availability_zones" {
+  description = <<-EOT
+    Read by deploy/cron/production (E5) so its subnets land in the same AZs
+    this root actually resolved to, rather than recomputing
+    aws_availability_zones and risking the two roots picking different zones.
+  EOT
+  value       = local.azs
+}
+
 output "deploy_role_arn" {
   description = "For the workflow's configure-aws-credentials step."
   value       = module.ci_oidc.role_arn

@@ -4,88 +4,320 @@ Decision tags **E1**–**E9** are defined in `design.md`.
 
 ## 1. Discovery
 
-- [ ] 1.1 Confirm the six corpus buckets (`ossf-scorecard-results`,
+Run 2026-08-31 with `scripts/cutover/capture-aws.sh` and a new sibling,
+`scripts/cutover/capture-aws-batch.sh`, which covers the DataSync, SQS
+attribute, CloudWatch and route-table sections the first script has none of.
+
+- [x] 1.1 Confirm the six corpus buckets (`ossf-scorecard-results`,
       `ossf-scorecard-cron-results`, `ossf-scorecard-data2`,
       `ossf-scorecard-rawdata`, `ossf-scorecard-input-projects`,
       `ossf-scorecard-cii-data`) are still present and still being written by
       DataSync, as `provision-aws` 1.4 found on 2026-08-29. Re-run
       `scripts/cutover/capture-aws.sh` rather than trust a five-day-old
       capture.
-- [ ] 1.2 Investigate the `openssf-scorecard` SQS queue (**E8**): its
+      **All six present in `us-east-1`. Versioning off, lifecycle absent,
+      bucket policy absent, encryption and public-access-block present on
+      every one — confirming E7's premise rather than assuming it. Newest
+      date partition in `data2` and `rawdata` is `2026.08.24/`, matching the
+      frozen corpus exactly. DataSync is still running but degrading; see the
+      note under group 3.**
+- [x] 1.2 Investigate the `openssf-scorecard` SQS queue (**E8**): its
       attributes, redrive policy (if any), and message count. Determine
       whether it is a leftover from an earlier attempt, an unwired
       placeholder, or already correctly shaped. Decide adopt-vs-create before
       **E2** is implemented.
-- [ ] 1.3 Confirm no EKS cluster, no batch-plane application IAM roles, and no
+      **Unwired placeholder, and not an old one: created 2026-08-26 by the
+      account root user via the console, then tuned 2026-08-28
+      (`VisibilityTimeout` 30→3600, `ReceiveMessageWaitTimeSeconds` 0→20).
+      CloudWatch reports 0 sent / 0 received / 0 deleted on every day since
+      creation — it has never carried a message. No redrive policy, no tags,
+      SSE off, and its name matches neither `cron/config/config.yaml`'s topic
+      (`scorecard-batch-requests`) nor its subscription. See 4.1.**
+- [x] 1.3 Confirm no EKS cluster, no batch-plane application IAM roles, and no
       SQS consumer already exist, as `provision-aws` 1.7 found for the
       serving plane's equivalents.
-- [ ] 1.4 Confirm the Elastic IP quota (5, shared by both planes per
+      **Confirmed on all three. Zero EKS clusters. Of 29 IAM roles, none is a
+      batch-plane application role — 8 service-linked, 8 Application
+      Migration, 7 `AWSDataSyncS3BucketAccess-*`, 6 serving-plane roles
+      created 2026-08-29. No consumer: zero Lambda event source mappings, and
+      the queue's own receive count is zero for its whole lifetime.**
+- [x] 1.4 Confirm the Elastic IP quota (5, shared by both planes per
       `provision-aws` 1.7) has enough headroom for the batch cluster's node
       groups' egress, given the serving plane's NAT Gateway is being shared
       (**E5**) rather than doubled.
+      **Three of five free. `describe-addresses` returns six, which reads as a
+      breach of a quota that has never been raised; it is not. Four are
+      `RequesterManaged: true` under `amazon-elb`, on the two ALBs'
+      interfaces, and service-managed addresses do not count against
+      `L-0263D0A3`. Only the two NAT Gateway EIPs are self-allocated, which
+      `deploy/`'s single `aws_eip` declaration corroborates. E5 stands on cost
+      alone — there is no capacity argument for it.**
 
 ## 2. Toolchain and scaffolding
 
-- [ ] 2.1 Create `deploy/cron/modules/{cluster,queue}/` and
+- [x] 2.1 Create `deploy/cron/modules/{cluster,queue}/` and
       `deploy/cron/production/`, each with its own `terraform` block pinning
       `required_version >= 1.10` (matching `deploy/api` and
       `deploy/cron/secrets`).
-- [ ] 2.2 `deploy/cron/production/`'s backend: S3, same state bucket
+      **`modules/cluster` and `modules/queue` are scaffolding only — a
+      `terraform` block and nothing else, since their resources are groups 5
+      and 4 respectively. `deploy/cron/production/` got its full network and
+      test-bucket content directly (see group 3), since 2.1's module list has
+      no `network` module — the batch plane attaches to an already-live VPC
+      it doesn't own, rather than building one, so those resources sit in the
+      root rather than a reusable module.**
+- [x] 2.2 `deploy/cron/production/`'s backend: S3, same state bucket
       `deploy/cron/secrets` uses, key `cron/production/terraform.tfstate`,
       `use_lockfile = true` (**E9**). No new bootstrap.
-- [ ] 2.3 Tag convention matches `deploy/cron/secrets`: `Project = "scorecard"`,
+- [x] 2.3 Tag convention matches `deploy/cron/secrets`: `Project = "scorecard"`,
       `Component = "cron"`, `ManagedBy = "opentofu"`,
       `Source = "ossf/scorecard-infra//deploy/cron/production"`.
 
 ## 3. Network
 
-- [ ] 3.1 Determine how `deploy/cron/production/` reaches `deploy/api`'s VPC
+- [x] 3.1 Determine how `deploy/cron/production/` reaches `deploy/api`'s VPC
       — a `terraform_remote_state` data source against `deploy/api`'s state,
       or a small shared network module both roots call. Decide before writing
       subnets (**E5**).
-- [ ] 3.2 Add private subnets and route tables for the batch cluster inside
+      **Decided with Stephen 2026-08-31: `terraform_remote_state` against
+      `deploy/api/production`'s state (`vpc_id`, subnet CIDRs, endpoint ID) —
+      read-only, one direction. For the S3 gateway endpoint's associations,
+      chose the association-resource split over design.md's original
+      `additional_route_table_ids`-input draft: `deploy/api/modules/network`
+      gets a one-time edit to stop setting `route_table_ids` inline on
+      `aws_vpc_endpoint.s3` and declare `aws_vpc_endpoint_route_table_association`
+      for its own two existing private route tables instead; `deploy/cron/production`
+      declares its own association resources against the same endpoint ID.
+      One-time edit to `deploy/api`, not a recurring one every time cron's
+      route tables change. See design.md's E5 section for the full reasoning.**
+- [x] 3.2 Add private subnets and route tables for the batch cluster inside
       that VPC, routed through the existing NAT Gateway. No new NAT Gateway,
       no new Elastic IP.
-- [ ] 3.3 Confirm the existing S3 gateway endpoint (if `deploy/api` has one)
-      covers the batch cluster's new subnets, or add the batch subnets to its
-      route table association.
-- [ ] 3.4 Create the three test buckets (**E7**): `ossf-scorecard-cron-results-test`,
-      `ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test`. Private,
+      **Written in `deploy/cron/production/main.tf`: two private subnets
+      (`var.private_subnet_cidrs`, defaulting to the two `/20`s design.md
+      picked), one route table per AZ, each routed to
+      `data.terraform_remote_state.api_production.outputs.nat_gateway_ids[0]`
+      — index `[0]` because `deploy/api/modules/network`'s
+      `single_nat_gateway` defaults true, so production has exactly one.
+      AZs come from that same remote-state read (`outputs.availability_zones`,
+      added in 3.3) rather than a second `aws_availability_zones` lookup, so
+      the two roots cannot resolve to different zones.
+      **Applied 2026-08-31: two private subnets (`us-east-1a`/`10.21.160.0/20`,
+      `us-east-1b`/`10.21.176.0/20`) with one route table each, both routed
+      through the shared NAT Gateway. `tofu apply`: 22 added, 0 changed, 0
+      destroyed, matching the plan exactly.**
+- [x] 3.3 Edit `deploy/api/modules/network`: replace `aws_vpc_endpoint.s3`'s
+      inline `route_table_ids` with `aws_vpc_endpoint_route_table_association`
+      resources for its own two private route tables (additive at the AWS API
+      level — same associations, different resource shape). Verify with a
+      full `tofu plan` (no `-target`) against `deploy/api/production` before
+      applying; this touches live serving-plane state. Then declare matching
+      `aws_vpc_endpoint_route_table_association` resources in
+      `deploy/cron/production` for the batch route tables from 3.2, against
+      the endpoint ID read via 3.1's remote-state data source.
+      **Both sides written. `deploy/api/modules/network/main.tf`'s
+      `aws_vpc_endpoint.s3` no longer sets `route_table_ids`; two
+      `aws_vpc_endpoint_route_table_association` resources cover its existing
+      two private route tables. `deploy/api/modules/network/outputs.tf`
+      gained `nat_gateway_ids`; `deploy/api/environments/production/outputs.tf`
+      gained `vpc_id`, `nat_gateway_ids`, `s3_endpoint_id`, and
+      `availability_zones` for 3.1/3.2 to read. `deploy/cron/production`
+      declares its own two association resources against the same endpoint
+      ID. `tofu validate` passes for both `environments/production` and
+      `environments/staging` (staging also calls `modules/network`, so the
+      edit had to stay safe for both — it is, since the resulting AWS-side
+      associations are unchanged, only the resource that manages them
+      changed).
+      **Both sides applied 2026-08-31, by Stephen, in order. `deploy/api/production`
+      first: 3 added (its own two `aws_vpc_endpoint_route_table_association`
+      resources, plus an unrelated ECS task definition replacement from an
+      intentional image digest bump bundled into the same apply), 1 changed,
+      1 destroyed. Then `deploy/cron/production` (3.2/3.4's apply): its own
+      two association resources against the same shared S3 gateway endpoint
+      — four associations on one endpoint total, no conflict, confirming the
+      association-resource split's whole premise under a real apply.**
+- [x] 3.4 Create the test buckets (**E7**): `ossf-scorecard-cron-results-test`,
+      `ossf-scorecard-data2-test`, `ossf-scorecard-rawdata-test`, and
+      `ossf-scorecard-cii-data-test`. Private,
       versioning on (unlike the adopted production buckets, which have it
       off — no reason to inherit that gap in something created fresh).
+      **Written in `deploy/cron/production/main.tf` via `var.test_buckets`,
+      names as proposed. Versioning, AES256 SSE, and a full public-access
+      block on each, matching `deploy/api/modules/state-backend`'s bucket
+      style minus the state bucket's `prevent_destroy` and
+      deny-insecure-transport policy — not warranted for buckets this
+      disposable. Applied 2026-08-31, all three created empty and versioned
+      as planned. `cii-data` was added to `var.test_buckets` afterwards, when
+      group 5 gave the CII worker a role and it had nowhere safe to write —
+      see the amended **E7**; it is the one bucket in this task not yet
+      applied.**
 
 ## 4. Queue
 
-- [ ] 4.1 Resolve **E8**: adopt `openssf-scorecard` or create a new queue,
+- [x] 4.1 Resolve **E8**: adopt `openssf-scorecard` or create a new queue,
       per task 1.2's finding.
-- [ ] 4.2 Provision the SQS Standard queue and its DLQ (**E2**), with a
+      **Decided in `design.md`'s E8 section (task 1.2): create fresh, leave
+      the existing placeholder queue alone. `deploy/cron/modules/queue`
+      creates `scorecard-batch-requests` and its DLQ, named to match
+      `cron/config/config.yaml`'s existing Pub/Sub topic name — SQS has no
+      separate topic/subscription concept, so this one queue plays both
+      roles once group 6 lands.**
+- [x] 4.2 Provision the SQS Standard queue and its DLQ (**E2**), with a
       finite `maxReceiveCount` redrive policy.
-- [ ] 4.3 Size the visibility timeout default to comfortably exceed a typical
+      **`deploy/cron/modules/queue/main.tf`: `aws_sqs_queue.this` with a
+      `redrive_policy` pointing at `aws_sqs_queue.dlq`,
+      `maxReceiveCount = var.max_receive_count` (default 5 — not a carried
+      value, since E8's placeholder queue never had a redrive policy at
+      all). Wired into `deploy/cron/production` as `module "queue"`. Applied
+      2026-08-31: 2 added, 0 changed, 0 destroyed, matching the plan
+      exactly.**
+- [x] 4.3 Size the visibility timeout default to comfortably exceed a typical
       scan's duration — this is a starting value the heartbeat (**E3**)
       extends, not the sole protection against redelivery.
+      **`visibility_timeout_seconds` defaults to 3600, `receive_wait_time_seconds`
+      to 20 — both carried from E8's finding: the pre-existing unwired
+      `openssf-scorecard` queue was tuned to exactly these values on
+      2026-08-28 by whoever understood this workload, even though that
+      queue itself was not reused.**
 
 ## 5. Cluster
 
-- [ ] 5.1 EKS cluster, one control plane, in the subnets from group 3.
-- [ ] 5.2 System node group: sized for the controller CronJob (bursts to one
+- [x] 5.1 EKS cluster, one control plane, in the subnets from group 3.
+      **`deploy/cron/modules/cluster`: `aws_eks_cluster.this` in group 3's
+      two private subnets, `access_config { authentication_mode = "API",
+      bootstrap_cluster_creator_admin_permissions = true }` — modern
+      EKS access management, no legacy aws-auth ConfigMap. The bootstrap
+      flag matters: under API auth mode nobody has cluster access by
+      default, not even the applying principal, so without it whoever runs
+      `tofu apply` would create a cluster they cannot immediately `kubectl`
+      into. Version pinned to **1.36**, the newest on EKS standard support
+      as of 2026-08-31 — an earlier draft pinned 1.31, whose standard
+      support ended in 2025 and which would have billed the control plane at
+      the extended-support rate, roughly six times standard and more per
+      month than the second NAT Gateway **E5** declined to buy. Endpoint
+      reachable privately (node traffic stays off the shared NAT Gateway)
+      and publicly (group 8's CI has no stable egress range to allowlist, so
+      IAM is the control, not the network). Control-plane `api`/`audit`/
+      `authenticator` logs enabled into a declared log group with finite
+      retention, rather than EKS's silent never-expire default.
+      **Applied 2026-08-31: 28 added, 0 changed, 0 destroyed across the whole
+      root, matching the plan exactly. The control plane took 10m6s of a
+      13m30s apply; the `cii-data` test bucket from 3.4 and every IAM role
+      landed in the first second.**
+- [x] 5.2 System node group: sized for the controller CronJob (bursts to one
       pod once a week) and the `scorecard-github-server` Deployment
       (always-on, small).
-- [ ] 5.3 Worker node group: sized for 14 workers (**E1**'s baseline),
+      **`aws_eks_node_group.system`, defaulted small (starting instance
+      type/count, tunable — A8), two nodes rather than one because CoreDNS
+      runs two replicas and wants two nodes to spread across. Untainted, so
+      cluster DaemonSets and add-on components land here. One IAM node role
+      shared by both node groups; per-workload access lives in Pod Identity,
+      not node-level IAM.**
+- [x] 5.3 Worker node group: sized for 14 workers (**E1**'s baseline),
       matching the current GKE `scorecard-batch-worker` Deployment replica
       count.
-- [ ] 5.4 Pod Identity associations: a role per workload
-      (controller/worker/github-server), each scoped to exactly what that
-      workload needs — the queue actions its role requires, the buckets it
-      reads/writes, and (worker, controller) `deploy/cron/secrets`'
+      **`aws_eks_node_group.worker`. `cron/k8s/worker.yaml` sets no
+      `resources.requests/limits`, so there is no hard sizing signal in the
+      manifest to size nodes against — instance type/count are a defensible
+      starting guess (A8), not derived from anything. 14 is the Deployment
+      replica count group 7 ports; this task is about how many *nodes* host
+      those pods, a separate number. Sized so each of the 14 pods gets
+      roughly a vCPU and 4 GiB, with ephemeral storage well above EKS's
+      20 GiB default — worker pods clone repositories to local disk, several
+      per node, and a full volume evicts pods rather than failing one scan.
+      This is the plane's largest cost lever; revisit against real
+      utilisation after group 9. Carries a `NoSchedule` taint keyed on the
+      same `scorecard.dev/pool` label both pools set: without it the two-pool
+      split is decorative, since nothing would stop 14 scanning pods landing
+      on the system node. Group 7.1 owes `worker.yaml` the matching
+      toleration. Both node groups applied 2026-08-31 — worker in 1m37s,
+      system in 2m8s, in parallel after the control plane.**
+- [x] 5.4 Pod Identity associations: a role per workload
+      (controller/worker/CII worker/github-server), each scoped to exactly
+      what that workload needs — the queue actions its role requires, the
+      buckets it reads/writes, and (worker only) `deploy/cron/secrets`'
       `read_policy_json` output.
-- [ ] 5.5 The controller's Kubernetes RBAC (`Role`/`RoleBinding` scoped to
+      **Four roles, four `aws_eks_pod_identity_association` resources — one
+      per `cron/k8s/*.yaml` workload. An earlier draft wrote three and
+      omitted the CII worker, which would have left `cii.yaml` falling back
+      to the node role and unable to write anything at all.
+      controller: `sqs:SendMessage`/`GetQueueAttributes` on the main queue,
+      read-only on the adopted `input-projects` bucket (no test counterpart
+      — E7), read/write on the `data2` test bucket (shard/completion state),
+      and **no secrets policy** — the same draft attached one, but there is
+      no `os.Getenv` anywhere in `cron/internal/controller/` and
+      `controller.yaml` carries no `secretKeyRef`, so it reads no credential.
+      worker:
+      `sqs:ReceiveMessage`/`DeleteMessage`/`ChangeMessageVisibility`/`GetQueueAttributes`
+      on the main queue, read/write on the `cron-results`/`data2`/`rawdata`
+      test buckets (not `cii-data-test` — that belongs to the CII worker
+      alone), plus the combined secrets read policy. CII worker: the
+      narrowest of the four — read/write on `cii-data-test` and nothing
+      else, since `cron/internal/cii/main.go` fetches the OpenSSF Best
+      Practices pages over plain HTTP and writes one bucket, with no queue
+      and no credential. `scorecard-github-server`: no queue, no bucket — a
+      policy scoped to *only* the github secret, narrower than the worker's
+      combined policy, since it has no business reading the gitlab or fastly
+      credentials. None of the `deploy/api` roles from `provision-aws`, the
+      DLQ, or any of the six adopted production buckets appear in any policy
+      this task wrote — that absence is what 5.6 verifies.
+      **A credential the manifests need that no root created:**
+      `worker.yaml` sets `FASTLY_PURGE_TOKEN`, and `deploy/cron/secrets`
+      created only github and gitlab. Added `fastly` there rather than
+      reading `deploy/api`'s across roots — two planes purging the same CDN
+      are two consumers, and one token each means either can be rotated
+      without taking the other down. It is optional at runtime:
+      `cron/internal/worker/main.go` logs "CDN purging disabled" and
+      continues with a no-op client when the variable is unset, which is the
+      correct behaviour during group 9 anyway. `deploy/cron/secrets` applied
+      2026-08-31 (one secret added, nothing else touched) and the value
+      loaded out of band; the worker's policy now covers all three
+      credentials.
+      **Load-bearing findings for group 7.1, not yet acted on there:** none
+      of `cron/k8s/{controller,worker,cii,auth}.yaml` sets
+      `serviceAccountName` today, so all four implicitly share the `default`
+      ServiceAccount. Pod Identity associates one role per (cluster,
+      namespace, service account) tuple — four workloads on one shared
+      ServiceAccount could only ever get one shared role, handing each
+      workload every other one's access. Every association above names a
+      workload-specific ServiceAccount (`scorecard-batch-controller`,
+      `scorecard-batch-worker`, `scorecard-cii-worker`,
+      `scorecard-github-server`) that does not exist in the manifests yet;
+      7.1 must create each and set it, and `controller.yaml`'s `RoleBinding`
+      subject needs the same update, away from `default`. Separately, the
+      IAM grant is not a delivery mechanism: the manifests read credentials
+      as *Kubernetes* Secrets (`secretKeyRef`, and a mounted file for the
+      GitHub App key), and nothing yet translates Secrets Manager into those
+      — see 7.2. All four roles, their policies and their associations
+      applied 2026-08-31; the `eks-pod-identity-agent` addon installed after
+      both node groups were up, per the ordering added for it.**
+- [x] 5.5 The controller's Kubernetes RBAC (`Role`/`RoleBinding` scoped to
       `get`, `patch` on the `scorecard-batch-worker` Deployment) needs no
       AWS-side IAM equivalent — verify it applies to EKS's control plane
       unchanged (**E4**).
-- [ ] 5.6 Verify denial, not only permission: confirm each role is refused
+      **Confirmed structurally: it's a Kubernetes API permission, and
+      EKS's control plane is a real Kubernetes API regardless of
+      authentication mode — no AWS-side resource in this module stands in
+      for it. It does need a content change in group 7.1 (not an AWS-side
+      one): the `RoleBinding`'s subject is currently `ServiceAccount:
+      default`, which 5.4's finding above already requires changing to the
+      controller's dedicated ServiceAccount for Pod Identity to work at
+      all — so this task and 5.4's finding land on the same manifest edit.**
+- [x] 5.6 Verify denial, not only permission: confirm each role is refused
       access to the other planes' buckets/secrets and to the production
       corpus buckets from a role scoped to the test buckets, not only that
       its own grants work.
+      **Partially satisfied by construction, not yet by a runtime test:**
+      no policy in `deploy/cron/modules/cluster` names the DLQ, any
+      `deploy/api` resource, or any of the six adopted production bucket
+      ARNs — reviewed directly against the module's source, not inferred.
+      That is necessary but not sufficient: a policy that never grants
+      access is not the same as a runtime `AccessDenied` observed from a
+      running pod. This task's AWS-side half is done; the behavioral half is
+      **task 9.9**, added for the purpose. An earlier draft deferred it to
+      "9.4/9.6, which cover adjacent ground" — they do not: 9.4 checks
+      output consistency and 9.6 runs the CII cycle, and neither would fail
+      if a role turned out to hold a grant it should not.
 
 ## 6. Code
 
@@ -110,15 +342,36 @@ Decision tags **E1**–**E9** are defined in `design.md`.
 ## 7. Workload manifests
 
 - [ ] 7.1 Port `cron/k8s/controller.yaml`, `worker.yaml`, `cii.yaml`,
-      `auth.yaml` for EKS: node-selector/affinity for the two-node-group
-      split (**E1**), the new `awssqs://` topic/subscription URLs, the AWS
-      config overlay's bucket URLs (`s3://...` for the three write targets).
-      Registry references already point at `ghcr.io` — no image changes.
+      `auth.yaml` for EKS: the new `awssqs://` topic/subscription URLs and
+      the AWS config overlay's bucket URLs (`s3://...`). Registry references
+      already point at `ghcr.io` — no image changes. Three things group 5
+      requires here, none of them optional:
+      - A distinct `ServiceAccount` object per manifest, with
+        `serviceAccountName` set to match the cluster module's
+        `workload_service_accounts` output — `scorecard-batch-controller`,
+        `scorecard-batch-worker`, `scorecard-cii-worker`,
+        `scorecard-github-server`. All four currently run as `default`, and
+        Pod Identity cannot give four workloads on one ServiceAccount four
+        different roles.
+      - `controller.yaml`'s `RoleBinding` subject repointed from
+        `ServiceAccount: default` to the controller's own.
+      - `nodeSelector` on all four for the `scorecard.dev/pool` label, plus
+        a toleration on `worker.yaml` for the worker pool's `NoSchedule`
+        taint (**E1**). Without the toleration the worker Deployment stays
+        `Pending` — deliberately loud.
 - [ ] 7.2 Add an AWS config overlay (e.g. `deploy/cron/config-aws.yaml` or a
       ConfigMap generated from one) analogous to `cron/config/config.yaml`,
       pointing at the test buckets (**E7**) until group 9 passes, and leaving
       BigQuery fields disabled/absent — this change does not deploy the
       transfer jobs.
+      **Also owns the credential delivery mechanism, which group 5 grants
+      but does not build.** `worker.yaml` and `auth.yaml` read credentials as
+      Kubernetes Secrets (`secretKeyRef`, and a mounted file for the GitHub
+      App key); nothing in the cluster translates a Secrets Manager secret
+      into one. The Secrets Store CSI driver with the AWS provider is the
+      obvious candidate and authenticates via exactly the Pod Identity 5.4
+      set up. Until this lands, the `secretsmanager:GetSecretValue` grants
+      are a permission with no caller.
 - [ ] 7.3 Confirm the `*.release.yaml` tier and `transfer*.yaml` are **not**
       ported — out of scope (proposal non-goals).
 
@@ -150,11 +403,13 @@ Decision tags **E1**–**E9** are defined in `design.md`.
 - [ ] 9.5 Confirm the DLQ receives a message that permanently fails (e.g. a
       deliberately malformed shard) after `maxReceiveCount` retries, rather
       than looping forever.
-- [ ] 9.6 Confirm the CII worker completes one cycle against the test
-      `cii-data` path (or documents why it was left pointed at the read-only
-      production bucket, if a CII-specific test bucket turns out unnecessary
-      — CII is lower-frequency and lower-risk per **E7**'s reasoning).
-- [ ] 9.7 Only after 9.1–9.6 pass: repoint the config overlay at the six
+- [ ] 9.6 Confirm the CII worker completes one cycle against
+      `ossf-scorecard-cii-data-test`. The earlier "or document why it was
+      left pointed at the production bucket" escape is gone: group 5 gave
+      the CII worker its own Pod Identity role, the amended **E7** gave it
+      its own test bucket, and its role is scoped to that bucket alone, so
+      writing production is no longer something it can do.
+- [ ] 9.7 Only after 9.1–9.6 and 9.9 pass: repoint the config overlay at the six
       production buckets and the real `projects.csv`/`gitlab-projects.csv`
       inventories, but do **not** enable the production `cron/k8s/*.yaml`
       schedules yet — that activation, and the community notice question it
@@ -162,6 +417,15 @@ Decision tags **E1**–**E9** are defined in `design.md`.
       automatic consequence of verification passing.
 - [ ] 9.8 `tofu fmt -check -recursive -diff deploy/cron/` and
       `tofu validate` (per-root, `-backend=false`) clean.
+- [ ] 9.9 Verify denial at runtime, closing task 5.6's behavioral half. From
+      a pod running under each role, confirm an actual `AccessDenied` — not
+      merely an absent grant — for: the worker writing any of the six
+      adopted production buckets; the worker calling `ReceiveMessage` on the
+      DLQ; the CII worker touching any bucket but `cii-data-test`; the
+      controller writing `cron-results-test` or `rawdata-test`; and any of
+      the four reading a `deploy/api` secret. Run this **before** 9.7
+      repoints anything at production, since 9.7 legitimately widens the
+      first of those grants and the check stops being meaningful after it.
 
 ## 10. Documentation
 

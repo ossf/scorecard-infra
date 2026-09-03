@@ -1,0 +1,75 @@
+output "private_subnet_ids" {
+  description = "Batch cluster subnets. EKS's node groups and control plane ENIs go here (group 5)."
+  value       = aws_subnet.private[*].id
+}
+
+output "private_route_table_ids" {
+  description = "For anything group 4-5 needs to reference by route table, e.g. VPC endpoint associations added later."
+  value       = aws_route_table.private[*].id
+}
+
+output "test_bucket_arns" {
+  description = "Keyed the same as var.test_buckets, for the IAM policies group 5.4 scopes to exactly these buckets."
+  value       = { for k, b in aws_s3_bucket.test : k => b.arn }
+}
+
+output "test_bucket_names" {
+  description = "Keyed the same as var.test_buckets, for the config overlay group 7.2 writes."
+  value       = { for k, b in aws_s3_bucket.test : k => b.bucket }
+}
+
+output "queue_url" {
+  description = "For the awssqs:// request-topic-url/request-subscription-url once group 6/7.2 land."
+  value       = module.queue.queue_url
+}
+
+output "queue_arn" {
+  description = "For the worker/controller Pod Identity roles' IAM policies (group 5.4)."
+  value       = module.queue.queue_arn
+}
+
+output "dlq_url" {
+  description = "For task 9.5's verification -- confirming a permanently-failing message lands here."
+  value       = module.queue.dlq_url
+}
+
+output "dlq_arn" {
+  description = "For task 5.6's explicit-denial verification -- the worker role should be refused access to this."
+  value       = module.queue.dlq_arn
+}
+
+output "cluster_name" {
+  description = "For group 8's `aws eks update-kubeconfig` step."
+  value       = module.cluster.cluster_name
+}
+
+output "cluster_endpoint" {
+  description = "For group 8's CI workflow."
+  value       = module.cluster.cluster_endpoint
+}
+
+output "workload_service_accounts" {
+  description = <<-EOT
+    Group 7.1 MUST create these ServiceAccounts and set them as
+    serviceAccountName in controller.yaml/worker.yaml/cii.yaml/auth.yaml --
+    see deploy/cron/modules/cluster's header comment for why a shared
+    "default" ServiceAccount across four workloads cannot work under Pod
+    Identity.
+  EOT
+  value = {
+    controller    = module.cluster.controller_service_account
+    worker        = module.cluster.worker_service_account
+    cii           = module.cluster.cii_service_account
+    github_server = module.cluster.github_server_service_account
+  }
+}
+
+output "node_pool_label" {
+  description = <<-EOT
+    The node label both pools carry and the taint the worker pool carries.
+    Group 7.1 needs both: a nodeSelector on all four workloads, and a
+    toleration on worker.yaml (E1). Without the toleration the worker
+    Deployment stays Pending.
+  EOT
+  value       = module.cluster.node_pool_label
+}

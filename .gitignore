@@ -31,10 +31,13 @@
 # *.tfvars may carry real values -- the checked-in examples are
 # *.tfvars.example. .terraform.lock.hcl is NOT ignored here: it is the
 # provider-version lock for each root module and stays tracked on purpose.
+# tfplan is `tofu plan -out=`'s saved plan file -- a point-in-time snapshot of
+# real resource attributes, stale the moment the next apply runs anywhere.
 **/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+tfplan
 crash.log
 crash.*.log

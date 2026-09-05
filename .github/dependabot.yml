@@ -31,10 +31,19 @@ updates:
         - "actions/*"
         - "github/*"
         - "golangci/*"
+        # Each pins a build-critical toolchain (Docker Buildx, OpenTofu);
+        # isolated so a regression there doesn't block unrelated action bumps.
+        - "docker/setup-buildx-action"
+        - "opentofu/setup-opentofu"
     github-owned:
       patterns:
         - "actions/*"
         - "github/*"
+      exclude-patterns:
+        # Pins the Go toolchain used to build and test everything else;
+        # isolated from its actions/* and github/* siblings for the same
+        # reason as the other toolchain-pinning actions above.
+        - "actions/setup-go"
     golangci:
       patterns:
         - "golangci/*"

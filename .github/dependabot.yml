@@ -12,6 +12,8 @@ updates:
         - "*"
       exclude-patterns:
         - "golang.org/x/*"
+        - "github.com/google/osv-scanner/*"
+        - "github.com/rhysd/actionlint"
     golang-x:
       patterns:
         - "golang.org/x/*"

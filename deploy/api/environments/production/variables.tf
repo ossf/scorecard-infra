@@ -81,3 +81,14 @@ variable "oidc_provider_arn" {
   EOT
   type        = string
 }
+
+variable "alert_email_addresses" {
+  description = <<-EOT
+    Addresses subscribed to the serving plane's alert SNS topic
+    (add-hosted-service-alerting). No default -- an account-specific value,
+    like origin_hostname above. Supply with -var or an untracked *.tfvars
+    file (see .gitignore's *.tfvars entry). Not declared in the staging
+    root: staging carries no on-call expectation.
+  EOT
+  type        = list(string)
+}

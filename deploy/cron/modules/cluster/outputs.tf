@@ -51,3 +51,18 @@ output "namespace" {
   description = "The namespace every ServiceAccount above, and its Pod Identity association, is created in."
   value       = var.namespace
 }
+
+output "system_node_group_asg_name" {
+  description = <<-EOT
+    The Auto Scaling group EKS creates behind the system node group, for the
+    alerting module's AWS/AutoScaling GroupInServiceInstances alarm -- a
+    node-health signal that costs nothing extra, unlike Container Insights,
+    which this cluster does not run.
+  EOT
+  value       = aws_eks_node_group.system.resources[0].autoscaling_groups[0].name
+}
+
+output "worker_node_group_asg_name" {
+  description = "Same as system_node_group_asg_name, for the worker pool."
+  value       = aws_eks_node_group.worker.resources[0].autoscaling_groups[0].name
+}

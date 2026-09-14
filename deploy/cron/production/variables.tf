@@ -26,6 +26,28 @@ variable "private_subnet_cidrs" {
   default     = ["10.21.160.0/20", "10.21.176.0/20"]
 }
 
+variable "system_desired_size" {
+  description = "Passed through to module.cluster and module.alerting -- see deploy/cron/modules/cluster's variable of the same name."
+  type        = number
+  default     = 2
+}
+
+variable "worker_desired_size" {
+  description = "Passed through to module.cluster and module.alerting -- see deploy/cron/modules/cluster's variable of the same name."
+  type        = number
+  default     = 3
+}
+
+variable "alert_email_addresses" {
+  description = <<-EOT
+    Addresses subscribed to the batch plane's alert SNS topic
+    (add-hosted-service-alerting). No default -- an account-specific value,
+    like var.state_bucket above. Supply with -var or an untracked *.tfvars
+    file (see .gitignore's *.tfvars entry).
+  EOT
+  type        = list(string)
+}
+
 variable "test_buckets" {
   description = <<-EOT
     Test buckets (E7), keyed by the cron/config/config.yaml field each

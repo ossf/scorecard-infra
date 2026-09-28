@@ -17,7 +17,7 @@ require (
 	github.com/jszwec/csvutil v1.10.0
 	github.com/mcuadros/go-jsonschema-generator v0.0.0-20200330054847-ba7a369d4303
 	github.com/open-feature/go-sdk v1.18.0
-	github.com/ossf/scorecard/v5 v5.5.1-0.20260908181711-f92023a3f778
+	github.com/ossf/scorecard/v5 v5.5.1-0.20260928043300-ac4b58443938
 	github.com/xeipuuv/gojsonschema v1.2.0
 	go.opencensus.io v0.24.0
 	go.yaml.in/yaml/v2 v2.4.4

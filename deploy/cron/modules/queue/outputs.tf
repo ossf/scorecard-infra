@@ -3,6 +3,11 @@ output "queue_url" {
   value       = aws_sqs_queue.this.url
 }
 
+output "queue_name" {
+  description = "CloudWatch's AWS/SQS metrics are dimensioned by QueueName, not ARN -- for the alerting module."
+  value       = aws_sqs_queue.this.name
+}
+
 output "queue_arn" {
   description = "For the worker/controller Pod Identity roles' IAM policies (group 5.4)."
   value       = aws_sqs_queue.this.arn
@@ -20,4 +25,9 @@ output "dlq_arn" {
     works.
   EOT
   value       = aws_sqs_queue.dlq.arn
+}
+
+output "dlq_name" {
+  description = "Same reason as queue_name: the alerting module's DLQ-depth alarm dimensions on this."
+  value       = aws_sqs_queue.dlq.name
 }

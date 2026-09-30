@@ -293,6 +293,12 @@ module "cluster" {
   name       = "scorecard-batch"
   subnet_ids = aws_subnet.private[*].id
 
+  # Passed explicitly, not left to the module's own defaults, so
+  # module.alerting's understaffed-node-group thresholds (below) cannot
+  # silently drift from what this root actually asks the cluster to run.
+  system_desired_size = var.system_desired_size
+  worker_desired_size = var.worker_desired_size
+
   queue_arn                 = module.queue.queue_arn
   input_projects_bucket_arn = data.aws_s3_bucket.input_projects.arn
   test_bucket_arns          = { for k, b in aws_s3_bucket.test : k => b.arn }
@@ -310,6 +316,27 @@ module "cluster" {
 
   secrets_read_policy_json = data.terraform_remote_state.cron_secrets.outputs.read_policy_json
   github_secret_arn        = data.terraform_remote_state.cron_secrets.outputs.secret_arns["github"]
+
+  tags = local.tags
+}
+
+# --- Alerting: SNS + CloudWatch alarms on the DLQ, backlog age, and node
+# groups (add-hosted-service-alerting) ---------------------------------------
+
+module "alerting" {
+  source = "../modules/alerting"
+
+  name = "scorecard-batch"
+
+  queue_name = module.queue.queue_name
+  dlq_name   = module.queue.dlq_name
+
+  system_asg_name     = module.cluster.system_node_group_asg_name
+  worker_asg_name     = module.cluster.worker_node_group_asg_name
+  system_desired_size = var.system_desired_size
+  worker_desired_size = var.worker_desired_size
+
+  alert_email_addresses = var.alert_email_addresses
 
   tags = local.tags
 }

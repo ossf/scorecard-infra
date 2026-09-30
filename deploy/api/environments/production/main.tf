@@ -114,6 +114,21 @@ module "service" {
   tags = local.tags
 }
 
+# --- Alerting: SNS + CloudWatch alarms on 5xx rate, unhealthy targets, and
+# latency (add-hosted-service-alerting) --------------------------------------
+
+module "alerting" {
+  source = "../../modules/alerting"
+
+  name = local.name
+
+  alb_arn_suffix          = module.edge.alb_arn_suffix
+  target_group_arn_suffix = module.edge.target_group_arn_suffix
+  alert_email_addresses   = var.alert_email_addresses
+
+  tags = local.tags
+}
+
 module "ci_oidc" {
   source = "../../modules/ci-oidc"
 

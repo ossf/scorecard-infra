@@ -23,7 +23,7 @@ require (
 	go.opencensus.io v0.24.0
 	go.yaml.in/yaml/v2 v2.4.4
 	gocloud.dev v0.46.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/time v0.16.0
 	google.golang.org/protobuf v1.36.12
 	sigs.k8s.io/release-utils v0.12.5

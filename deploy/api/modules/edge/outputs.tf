@@ -41,3 +41,17 @@ output "https_listener_arn" {
   description = "HTTPS listener ARN."
   value       = aws_lb_listener.https.arn
 }
+
+output "alb_arn_suffix" {
+  description = <<-EOT
+    CloudWatch's AWS/ApplicationELB dimensions take this short form
+    (app/name/id), not the full ARN already exposed above -- for the
+    alerting module's per-load-balancer metrics.
+  EOT
+  value       = aws_lb.this.arn_suffix
+}
+
+output "target_group_arn_suffix" {
+  description = "Same shape as alb_arn_suffix, for per-target-group metrics."
+  value       = aws_lb_target_group.this.arn_suffix
+}

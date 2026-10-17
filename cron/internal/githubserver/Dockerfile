@@ -29,6 +29,6 @@ ARG SOURCE_DATE_EPOCH
 ARG SCORECARD_ENGINE_COMMIT
 RUN CGO_ENABLED=0 make build-github-server
 
-FROM gcr.io/distroless/base:nonroot@sha256:0896741ba5bafd3ac87ea025a5f578952f2d238ddc3614cb368acc983a687aa2
+FROM gcr.io/distroless/base:nonroot@sha256:a0d70d6a97cd697d9362bc2aae4a6560dd65817e365d0043b07325a97975dc91
 COPY --from=authserver /src/cron/internal/githubserver/github-auth-server cron/internal/githubserver/github-auth-server
 ENTRYPOINT ["cron/internal/githubserver/github-auth-server"]

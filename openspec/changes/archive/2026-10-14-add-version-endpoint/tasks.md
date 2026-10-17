@@ -36,5 +36,11 @@
       **Done 2026-10-14:** the binary in `scorecard-api:sha-5c445f8…`
       contains the full commit and `5c445f8` as its version, and links
       `actionlint.kjanat.dev v1.17.0`.
-- [ ] 4.4 After the next release is deployed, `api.scorecard.dev/version`
+- [x] 4.4 After the next release is deployed, `api.scorecard.dev/version`
       reports it.
+      **Done 2026-10-14:** `v0.3.0` deployed as task definition revision 4.
+      `/version` returns `v0.3.0`, `8fb4a1b…`, and
+      `actionlint.kjanat.dev v1.17.0` through the CDN. The first request
+      landed on a `v0.2.0` task mid-rollout, and Fastly cached its 404
+      under its default TTL. That one URL needed a manual purge, which only
+      happens once, when a route is introduced.

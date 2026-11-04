@@ -318663,6 +318663,8 @@ github.com/bitbeatjs/redis,
 github.com/bitbeatjs/web,
 github.com/bitbeatjs/websocket,
 github.com/bitbender/NLPTools,
+github.com/bitbill/bittool-signer-android,
+github.com/bitbill/bittool-signer-ios,
 github.com/bitbinio/bitbin,num_dependents_deps.dev:0
 github.com/bitbinio/bitbin-local,num_dependents_deps.dev:0
 github.com/bitbird-dev/Bitbird.Core.Ember.I18n,

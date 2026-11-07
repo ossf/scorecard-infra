@@ -788,13 +788,16 @@ selected the wrong thing.
       maintenance. The distinction was worth spending a query on rather than
       assuming either way — announcing a self-inflicted regression that was not
       one costs credibility exactly when the migration needs it.
-- [ ] 6.3f **Give `dnsdiff.sh` an HTTPS probe for web-facing names.** Record
-      comparison is sound for `api.*` and `_acme-challenge` and unsound for
-      anything terminating TLS, per the reasoning in 6.3d. 6.3e is a working
-      example of a name the record layer called identical to a healthy one.
-      Explicitly *not* the `[TYPE CHANGED]` classifier that was drafted first:
-      resolving `A`/`AAAA` to excuse an absent CNAME would have marked the
-      broken hostname benign.
+- [x] 6.3f **Give `dnsdiff.sh` an HTTPS probe for web-facing names.** Added
+      `is_web_facing` and `probe_https` with curl certificate and status validation
+      for apex and `www` hostnames (`scorecard.dev`, `securityscorecards.dev`),
+      routing directly via `curl --resolve` against the target nameserver's A
+      record. Record comparison remains intact for `api.*` and `_acme-challenge`
+      records. Verified that valid web hostnames report `[HTTPS OK]` with HTTP
+      200/301, while bad certificates or SAN omissions (like 6.3e) fail with
+      `[HTTPS FAIL]`. Explicitly *not* the `[TYPE CHANGED]` classifier that was
+      drafted first: resolving `A`/`AAAA` to excuse an absent CNAME would have
+      marked the broken hostname benign.
 - [x] 6.3g **Re-ran `capture-fastly.sh` (2026-08-28); the earlier output had
       been lost.** The 2026-08-25 capture was not on disk and, being gitignored,
       was not recoverable from the repository either — while 6.3c cites its

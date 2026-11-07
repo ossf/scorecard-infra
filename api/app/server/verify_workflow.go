@@ -87,15 +87,7 @@ func (i imposterCommitError) Error() string {
 	return fmt.Sprintf("imposter commit: %s does not belong to %s", i.ref, i.action)
 }
 
-func verifyScorecardWorkflow(workflowContent string, verifier commitVerifier) error {
-	// Verify workflow contents using actionlint. Diagnostics on reviewed,
-	// capability-removing keys are let through; everything else still fails.
-	workflow, lintErrs := actionlint.Parse([]byte(workflowContent))
-	lintErrs = unreviewedDiagnostics(workflowContent, lintErrs)
-	if lintErrs != nil || workflow == nil {
-		return fmt.Errorf("%w: %v", errWorkflowParse, lintErrs)
-	}
-
+func verifyGlobalSettings(workflow *actionlint.Workflow) error {
 	// Verify that there are no global env vars or defaults.
 	if workflow.Env != nil || workflow.Defaults != nil {
 		return verificationError{e: errGlobalVarsOrDefaults}
@@ -116,23 +108,10 @@ func verifyScorecardWorkflow(workflowContent string, verifier commitVerifier) er
 			}
 		}
 	}
+	return nil
+}
 
-	// Find the (first) job with a step that calls scorecard-action.
-	scorecardJob := findScorecardJob(workflow.Jobs)
-	if scorecardJob == nil {
-		return verificationError{e: errScorecardJobNotFound}
-	}
-
-	// Make sure other jobs don't have id-token permissions.
-	for _, job := range workflow.Jobs {
-		if job != scorecardJob && job.Permissions != nil {
-			idToken := job.Permissions.Scopes["id-token"]
-			if idToken != nil && idToken.Value.Value == "write" {
-				return verificationError{e: errNonScorecardJobHasTokenWrite}
-			}
-		}
-	}
-
+func verifyScorecardJobConfig(scorecardJob *actionlint.Job) error {
 	// Verify that there is no job container or services.
 	if scorecardJob.Container != nil || hasServices(scorecardJob) {
 		return verificationError{e: errJobHasContainerOrServices}
@@ -159,10 +138,10 @@ func verifyScorecardWorkflow(workflowContent string, verifier commitVerifier) er
 	if scorecardJob.Defaults != nil {
 		return verificationError{e: errScorecardJobDefaults}
 	}
+	return nil
+}
 
-	// Get steps in job.
-	steps := scorecardJob.Steps
-
+func verifyJobSteps(steps []*actionlint.Step, verifier commitVerifier) error {
 	// Verify that steps are valid (checkout, scorecard-action, upload-artifact, upload-sarif).
 	for _, step := range steps {
 		stepUses := getStepUses(step)
@@ -201,8 +180,43 @@ func verifyScorecardWorkflow(workflowContent string, verifier commitVerifier) er
 			return verificationError{e: fmt.Errorf("%w: %s", errUnallowedStepName, stepName)}
 		}
 	}
-
 	return nil
+}
+
+func verifyScorecardWorkflow(workflowContent string, verifier commitVerifier) error {
+	// Verify workflow contents using actionlint. Diagnostics on reviewed,
+	// capability-removing keys are let through; everything else still fails.
+	workflow, lintErrs := actionlint.Parse([]byte(workflowContent))
+	lintErrs = unreviewedDiagnostics(workflowContent, lintErrs)
+	if lintErrs != nil || workflow == nil {
+		return fmt.Errorf("%w: %v", errWorkflowParse, lintErrs)
+	}
+
+	if err := verifyGlobalSettings(workflow); err != nil {
+		return err
+	}
+
+	// Find the (first) job with a step that calls scorecard-action.
+	scorecardJob := findScorecardJob(workflow.Jobs)
+	if scorecardJob == nil {
+		return verificationError{e: errScorecardJobNotFound}
+	}
+
+	// Make sure other jobs don't have id-token permissions.
+	for _, job := range workflow.Jobs {
+		if job != scorecardJob && job.Permissions != nil {
+			idToken := job.Permissions.Scopes["id-token"]
+			if idToken != nil && idToken.Value.Value == "write" {
+				return verificationError{e: errNonScorecardJobHasTokenWrite}
+			}
+		}
+	}
+
+	if err := verifyScorecardJobConfig(scorecardJob); err != nil {
+		return err
+	}
+
+	return verifyJobSteps(scorecardJob.Steps, verifier)
 }
 
 // Finds the job with a step that calls ossf/scorecard-action.

@@ -80,8 +80,8 @@ func getResults(host, orgName, repoName string, commit *string) ([]byte, error) 
 	// Query the primary results bucket.
 	ctx := context.Background()
 	if bucket, err := blob.OpenBucket(ctx, resultsBucketURL()); err == nil {
-		if results, err := bucket.ReadAll(ctx, cleanResultsFile); err == nil {
-			return results, nil
+		if res, err := bucket.ReadAll(ctx, cleanResultsFile); err == nil {
+			return res, nil
 		}
 	}
 
@@ -92,8 +92,8 @@ func getResults(host, orgName, repoName string, commit *string) ([]byte, error) 
 
 	// Try the backup cron bucket.
 	if bucket, err := blob.OpenBucket(ctx, cronResultsBucketURL()); err == nil {
-		if results, err := bucket.ReadAll(ctx, cleanResultsFile2); err == nil {
-			return results, nil
+		if res, err := bucket.ReadAll(ctx, cleanResultsFile2); err == nil {
+			return res, nil
 		}
 	}
 

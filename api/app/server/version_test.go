@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-openapi/runtime"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ossf/scorecard-infra/api/app/generated/models"
 	"github.com/ossf/scorecard-infra/api/app/generated/restapi/operations/version"
@@ -110,6 +111,6 @@ func TestGetVersionHandler(t *testing.T) {
 	assert.Equal(t, "max-age=60", rec.Header().Get("Cache-Control"))
 	assert.Equal(t, "scorecard-version", rec.Header().Get("Surrogate-Key"))
 	want, err := json.Marshal(buildVersion())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.JSONEq(t, string(want), rec.Body.String())
 }

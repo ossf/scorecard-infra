@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type allowListVerifier struct {
@@ -61,8 +62,11 @@ func TestVerifyValidWorkflows(t *testing.T) {
 	}
 
 	for _, workflowFile := range workflowFiles {
-		workflowContent, _ := os.ReadFile(workflowFile)
-		err := verifyScorecardWorkflow(string(workflowContent), allowCommitVerifier)
+		workflowContent, err := os.ReadFile(workflowFile)
+		if err != nil {
+			t.Fatalf("reading %s: %v", workflowFile, err)
+		}
+		err = verifyScorecardWorkflow(string(workflowContent), allowCommitVerifier)
 		if err != nil {
 			t.Errorf("expected - %v, got - %v", nil, err)
 		}
@@ -95,9 +99,12 @@ func TestVerifyInvalidWorkflows(t *testing.T) {
 	}
 
 	for _, workflowFile := range workflowFiles {
-		workflowContent, _ := os.ReadFile(workflowFile)
-		err := verifyScorecardWorkflow(string(workflowContent), allowCommitVerifier)
-		assert.NotEqual(t, err, nil, workflowFile)
+		workflowContent, err := os.ReadFile(workflowFile)
+		if err != nil {
+			t.Fatalf("reading %s: %v", workflowFile, err)
+		}
+		err = verifyScorecardWorkflow(string(workflowContent), allowCommitVerifier)
+		assert.Error(t, err, workflowFile)
 	}
 }
 
@@ -144,7 +151,7 @@ func TestVerifyRunnerLabels(t *testing.T) {
 			}
 			// An unsupported runner must surface as a verificationError wrapping
 			// errInvalidRunnerLabel so the API returns 400, not 500.
-			assert.ErrorIs(t, err, errInvalidRunnerLabel)
+			require.ErrorIs(t, err, errInvalidRunnerLabel)
 			var vErr verificationError
 			assert.ErrorAs(t, err, &vErr)
 		})
@@ -192,6 +199,8 @@ func FuzzVerifyWorkflow(f *testing.F) {
 		if !utf8.ValidString(data) {
 			t.Skip()
 		}
-		verifyScorecardWorkflow(data, allowCommitVerifier)
+		if err := verifyScorecardWorkflow(data, allowCommitVerifier); err != nil {
+			return
+		}
 	})
 }

@@ -96,10 +96,9 @@ func TestNewVersionInfo(t *testing.T) {
 }
 
 // The body is checked against buildVersion() rather than a literal parser
-// version: under Go 1.26.5 (CI's toolchain), a `go test` binary's build info
-// lists no module dependencies, so the parser reads "unknown" here even though
-// a real `go build` of the server records it. TestNewVersionInfo covers
-// extraction.
+// version: a `go test` binary's build info can list no module dependencies,
+// so the parser reads "unknown" here even though a real `go build` of the
+// server records it. TestNewVersionInfo covers extraction.
 func TestGetVersionHandler(t *testing.T) {
 	t.Parallel()
 	rec := httptest.NewRecorder()

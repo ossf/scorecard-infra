@@ -610118,11 +610118,13 @@ github.com/hiepndd/npx-card,num_dependents_deps.dev:0
 github.com/hieptnguyen94/react-headless-confirm,num_dependents_deps.dev:0
 github.com/hiero-ledger/heka-identity-platform,
 github.com/hiero-ledger/hiero,
+github.com/hiero-ledger/hiero-agentic-support,
 github.com/hiero-ledger/hiero-block-node,
 github.com/hiero-ledger/hiero-cli,
 github.com/hiero-ledger/hiero-consensus-node,
 github.com/hiero-ledger/hiero-consensus-specifications,
 github.com/hiero-ledger/hiero-contracts,
+github.com/hiero-ledger/hiero-cryptography,
 github.com/hiero-ledger/hiero-did-sdk-js,
 github.com/hiero-ledger/hiero-did-sdk-python,
 github.com/hiero-ledger/hiero-docs,
@@ -610147,6 +610149,7 @@ github.com/hiero-ledger/hiero-solo-action,
 github.com/hiero-ledger/hiero-website,
 github.com/hiero-ledger/sdk-collaboration-hub,
 github.com/hiero-ledger/solo,
+github.com/hiero-ledger/solo-charts,
 github.com/hieronimusbudi/komodo-backend,num_dependents_deps.dev:0
 github.com/hieronymous-bean/celestial-bodies,num_dependents_deps.dev:0
 github.com/hierynomus/assumeng,num_dependents_deps.dev:0

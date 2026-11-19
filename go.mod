@@ -41,7 +41,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.5
 	go.yaml.in/yaml/v4 v4.0.0
 	gocloud.dev v0.48.0
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/time v0.16.0

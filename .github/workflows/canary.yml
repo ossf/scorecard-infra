@@ -47,11 +47,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      # Upstream's main branch can raise its go.mod floor at any time. Without
-      # this, a pinned go-version below that floor fails the whole job with a
-      # go.mod version error instead of exercising the actual engine change.
-      GOTOOLCHAIN: auto
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
@@ -62,10 +57,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Upstream's main branch can raise its go.mod floor at any time, and
+      # setup-go sets GOTOOLCHAIN=local, so the toolchain can't upgrade
+      # itself. 'stable' tracks the newest release, which upstream's floor
+      # doesn't pass.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 'oldstable'
+          go-version: 'stable'
           check-latest: true
 
       - name: Point the engine dependency at upstream main

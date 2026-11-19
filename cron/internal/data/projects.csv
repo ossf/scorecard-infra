@@ -109088,6 +109088,11 @@ github.com/LFDM/chai-lint,num_dependents_deps.dev:0
 github.com/LFDM/firestore-backup-gh-action,
 github.com/LFDM/ftemp,num_dependents_deps.dev:0
 github.com/LFDM/redux-state-keys,num_dependents_deps.dev:0
+github.com/LFDT-CLPR/clpr-e2e,
+github.com/LFDT-CLPR/clpr-endpoint,
+github.com/LFDT-CLPR/clpr-smart-contracts,
+github.com/LFDT-CLPR/clpr-spec,
+github.com/LFDT-CLPR/clpr-website,
 github.com/LFL398619091/buddha398619091,num_dependents_deps.dev:0
 github.com/LFL398619091/jl-sort,num_dependents_deps.dev:0
 github.com/LFL398619091/jpicker,num_dependents_deps.dev:0

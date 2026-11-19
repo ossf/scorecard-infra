@@ -47,7 +47,7 @@
 # a record in the capture that the new nameserver does not answer for is a
 # hard failure, not a skipped row.
 #
-# Requires `dig` and `jq`, and network access to both nameservers.
+# Requires `dig`, `jq`, and `curl`, and network access to both nameservers.
 
 set -uo pipefail
 
@@ -76,6 +76,8 @@ if [ "${1:-}" = "--list" ]; then LIST_ONLY=1; shift; fi
 command -v jq >/dev/null || { echo "error: jq is required" >&2; exit 2; }
 [ "${LIST_ONLY}" -eq 1 ] || command -v dig >/dev/null || \
   { echo "error: dig is required" >&2; exit 2; }
+[ "${LIST_ONLY}" -eq 1 ] || command -v curl >/dev/null || \
+  { echo "error: curl is required" >&2; exit 2; }
 
 has_records() {
   local f
@@ -160,6 +162,83 @@ dig_answer() {
   printf '%s\n' "${out}" | norm
 }
 
+# Web-facing hostnames terminating TLS (task 6.3f). Record comparison is sound
+# for `api.*` and `_acme-challenge` (which are static CNAMEs) and unsound for
+# anything terminating TLS on Netlify: apex A records fluctuate across regions
+# due to ALIAS flattening, and www CNAMEs are flattened into ALIAS addresses.
+# Crucially, record comparison cannot detect TLS certificate defects, such as
+# when a certificate SAN list omits a subdomain (task 6.3d, 6.3e).
+is_web_facing() {
+  local name="${1%.}"
+  case "${name}" in
+    scorecard.dev|www.scorecard.dev|securityscorecards.dev|www.securityscorecards.dev)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# probe_https <name> <target-ns>
+# Fetches the hostname over HTTPS using curl. Verifies that TLS negotiates
+# cleanly with full certificate validation (catching SAN omissions or expired
+# certificates) and returns a healthy web HTTP status code (2xx or 3xx).
+# If the target nameserver provides an A record IP, routes directly to that IP via
+# curl --resolve to test the target nameserver's destination directly.
+probe_https() {
+  local name="${1%.}"
+  local target_ns="${2:-}"
+  local target_ip=""
+  local err_file code rc err_msg
+
+  if [ -n "${target_ns}" ]; then
+    target_ip="$(dig @"${target_ns}" "${name}" A +short +time=2 +tries=2 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+  fi
+
+  err_file="$(mktemp)"
+  local curl_args=(
+    -sS
+    -o /dev/null
+    -w "%{http_code}"
+    --connect-timeout 5
+    --max-time 10
+  )
+
+  if [ -n "${target_ip}" ]; then
+    curl_args+=(--resolve "${name}:443:${target_ip}")
+  fi
+
+  code="$(curl "${curl_args[@]}" "https://${name}" 2>"${err_file}")"
+  rc=$?
+  err_msg="$(head -n 2 "${err_file}" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+  rm -f "${err_file}"
+
+  if [ "${rc}" -ne 0 ] || [ -z "${code}" ] || [ "${code}" = "000" ]; then
+    if [ -n "${err_msg}" ]; then
+      echo "TLS/connection error: ${err_msg}"
+    else
+      echo "curl connection failed (exit code ${rc})"
+    fi
+    return 1
+  fi
+
+  case "${code}" in
+    2*|3*)
+      if [ -n "${target_ip}" ]; then
+        echo "HTTP ${code} via ${target_ip}"
+      else
+        echo "HTTP ${code}"
+      fi
+      return 0
+      ;;
+    *)
+      echo "HTTP status ${code}"
+      return 1
+      ;;
+  esac
+}
+
 MATCH=0; MISMATCH=0; MISSING=0; EXPECTED_DIFF=0; DRIFT=0; UNREACHABLE=0
 
 echo "=========================================================="
@@ -227,6 +306,22 @@ while IFS="$(printf '\t')" read -r NAME TYPE WANT; do
     echo "ℹ️  [EXPECTED] ${NAME} (NS) -- delegation change, not a discrepancy"
     echo "      old: $(echo "${OLD_N}" | tr '\n' ' ')"
     echo "      new: $(echo "${NEW_N}" | tr '\n' ' ')"
+    continue
+  fi
+
+  # Web-facing names terminating TLS (task 6.3f). Record comparison is unsound
+  # because Netlify uses ALIAS flattening for apex and www (returning dynamic A
+  # addresses rather than static captured IPs or CNAMEs), and record comparison
+  # cannot verify TLS certificates (task 6.3d, 6.3e). Fetching the name over
+  # HTTPS verifies resolution, TLS certificate validity, and HTTP response.
+  if is_web_facing "${NAME}" && { [ "${TYPE}" = "A" ] || [ "${TYPE}" = "CNAME" ]; }; then
+    if res="$(probe_https "${NAME}" "${TARGET_NS}")"; then
+      MATCH=$((MATCH + 1))
+      echo "✅ [HTTPS OK] ${NAME} (${TYPE}) -- ${res} (TLS verified)"
+    else
+      MISMATCH=$((MISMATCH + 1))
+      echo "❌ [HTTPS FAIL] ${NAME} (${TYPE}) -- ${res}"
+    fi
     continue
   fi
 

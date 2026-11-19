@@ -25,5 +25,9 @@ type githubTransport struct {
 
 func (transport githubTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r.Header.Add("Authorization", fmt.Sprintf("Bearer %s", transport.token))
-	return http.DefaultTransport.RoundTrip(r)
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		return nil, fmt.Errorf("round trip: %w", err)
+	}
+	return resp, nil
 }

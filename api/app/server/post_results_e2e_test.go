@@ -102,7 +102,7 @@ var _ = Describe("E2E Test: getAndVerifyWorkflowContent", func() {
 				Result:      string(payload),
 				TlogIndex:   noTlogIndex,
 			}
-			Expect(getAndVerifyWorkflowContent(ctx, scorecardResult, info)).Should(BeNil())
+			Expect(getAndVerifyWorkflowContent(ctx, scorecardResult, &info)).Should(BeNil())
 		})
 	}
 	AssertInvalidWorkflowContent := func(filename string, errSubstr string) {
@@ -115,7 +115,7 @@ var _ = Describe("E2E Test: getAndVerifyWorkflowContent", func() {
 				Branch:      "main",
 				Result:      string(payload),
 			}
-			err := getAndVerifyWorkflowContent(ctx, scorecardResult, info)
+			err := getAndVerifyWorkflowContent(ctx, scorecardResult, &info)
 			Expect(err).Should(MatchError(ContainSubstring(errSubstr)))
 		})
 	}

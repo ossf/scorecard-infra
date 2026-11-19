@@ -57,7 +57,7 @@ type PublicKey struct {
 }
 
 // check if the rekord object matches a given blob (currently compares sha256 hash).
-func (b Body) Matches(blob []byte) bool {
+func (b *Body) Matches(blob []byte) bool {
 	if b.Spec.Data.Hash.Algorithm != sha256AlgorithmName {
 		log.Println("hashedrekord entry has no sha256")
 		return false
@@ -69,7 +69,7 @@ func (b Body) Matches(blob []byte) bool {
 }
 
 // extracts all x509 certs from the hashedrekord tlog entry public key.
-func (b Body) Certs() ([]*x509.Certificate, error) {
+func (b *Body) Certs() ([]*x509.Certificate, error) {
 	publicKey, err := base64.StdEncoding.DecodeString(b.Spec.Signature.PublicKey.Content)
 	if err != nil {
 		return nil, fmt.Errorf("decode rekord public key: %w", err)

@@ -197,30 +197,6 @@ linters:
           - lll
           - wrapcheck
         path: (.+)_test\.go
-      # The imported results API (design W7). ossf/scorecard-webapp ran
-      # `default: none` with an explicit enable list; this config descends from
-      # ossf/scorecard's and enables strictly more. Every linter below fired
-      # only because of that difference -- none of it is a defect the imported
-      # code introduced, and all of it is in hand-written source rather than the
-      # generated tree, so a generated-path exclusion would not reach it.
-      #
-      # While the tree was behavior-frozen for its cutover, the choice was to
-      # rewrite it to satisfy a config it never ran under, or to apply its own
-      # historical rules to it. This is the latter, scoped to api/ so nothing
-      # else inherits the laxer set.
-      #
-      # The freeze has lifted (lift-migration-quarantine). REMOVE THIS BLOCK and
-      # fix what it surfaces -- task 5.7 in openspec/changes/migrate-api.
-      - linters:
-          - err113
-          - errcheck
-          - errorlint
-          - gocognit
-          - gocritic
-          - nolintlint
-          - testifylint
-          - wrapcheck
-        path: ^api/
       # govet is deliberately NOT in the list above. Upstream's `default: none`
       # left it off (its govet settings block is vestigial), but leaving it on
       # here caught a real defect the split would otherwise have carried in: a

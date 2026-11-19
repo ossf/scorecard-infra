@@ -27,9 +27,15 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func run() error {
 	swaggerSpec, err := loads.Embedded(restapi.SwaggerJSON, restapi.FlatSwaggerJSON)
 	if err != nil {
-		log.Fatalln(err)
+		return fmt.Errorf("loading embedded swagger spec: %w", err)
 	}
 
 	var server *restapi.Server // make sure init is called
@@ -59,7 +65,5 @@ func main() {
 	}()
 
 	server.ConfigureAPI()
-	if err := server.Serve(); err != nil {
-		log.Fatalln(err)
-	}
+	return server.Serve()
 }

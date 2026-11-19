@@ -315,10 +315,14 @@ selected the wrong thing.
       dependency of this module now regardless. The remaining argument is narrower
       and stated as such — depending on those models would couple the cache path
       to a tree CI forbids importing.
-- [ ] 5.7 **Remove the `api/` linter-exclusion block from `.golangci.yml` when
-      the behavior freeze lifts**, and fix what it surfaces. The block is scoped
-      to `api/` and annotated with a pointer to this task; it exists because the
-      imported tree is frozen, not because the findings are wrong (**W7**, 3.5).
+- [x] 5.7 **Remove the `api/` linter-exclusion block from `.golangci.yml` when
+      the behavior freeze lifts**, and fix what it surfaces. Removed the `api/`
+      linter exclusions block covering err113, errcheck, errorlint, gocognit,
+      gocritic, nolintlint, testifylint, and wrapcheck. Addressed all surfaced
+      warnings across `api/`: wrapped static sentinel errors, decomposed verify workflow
+      helpers to reduce cognitive complexity, passed certInfo by pointer, handled
+      deferred and unhandled error checks, and cleaned unused directives.
+      Repository-wide `golangci-lint run ./...` verified clean (0 issues).
 
 ## 6. Production cutover
 

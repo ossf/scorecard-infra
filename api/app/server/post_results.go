@@ -73,6 +73,16 @@ var (
 	errNotRekordEntry           = errors.New("not a rekord entry")
 	errMismatchedTlogEntry      = errors.New("tlog entry does not match payload")
 	errNotOIDC                  = errors.New(`ensure your GitHub workflow has "id-token: write" permissions`)
+	errMalformedCertRepo        = errors.New("cert repository name is malformed")
+	errMalformedCertWorkflow    = errors.New("cert workflow path is malformed")
+	errNoInclusionProof         = errors.New("no inclusion proof provided")
+	errInvalidLeafHashSize      = errors.New("leafHash has unexpected size")
+	errPEMDecodeFailed          = errors.New("PEM decoding failed")
+	errNotECDSAKey              = errors.New("public key retrieved from Rekor is not an ECDSA key")
+	errUnableToVerify           = errors.New("unable to verify")
+	errCertExpiredBeforeLog     = errors.New("certificate expired before signatures were entered in log")
+	errCertIssuedAfterLog       = errors.New("certificate was issued after signatures were entered in log")
+	errUnmarshallingPEMCert     = errors.New("unmarshalling PEM certificate")
 
 	// errRekorSearchUnavailable indicates the Rekor search-by-hash index could not be
 	// used to locate a tlog entry: the endpoint returned a non-OK status or a
@@ -159,7 +169,7 @@ func processRequest(host, org, repo string, scorecardResult *models.VerifiedScor
 		return verificationError{e: errMismatchedCertAndRequest}
 	}
 
-	if err := getAndVerifyWorkflowContent(ctx, scorecardResult, info); err != nil {
+	if err := getAndVerifyWorkflowContent(ctx, scorecardResult, &info); err != nil {
 		return fmt.Errorf("workflow verification failed: %w", err)
 	}
 
@@ -167,7 +177,7 @@ func processRequest(host, org, repo string, scorecardResult *models.VerifiedScor
 	bucketURL := resultsBucketURL()
 	objectPath := fmt.Sprintf("%s/%s/%s/%s", host, org, repo, resultsFile)
 	if err := writeToBlobStore(ctx, bucketURL, objectPath, []byte(scorecardResult.Result)); err != nil {
-		return fmt.Errorf("%w: %v", errWritingBucket, err)
+		return fmt.Errorf("%w: %w", errWritingBucket, err)
 	}
 	purger := getPurger()
 	path := fmt.Sprintf("/projects/%s/%s/%s", host, org, repo)
@@ -177,7 +187,7 @@ func processRequest(host, org, repo string, scorecardResult *models.VerifiedScor
 
 	commitObjectPath := fmt.Sprintf("%s/%s/%s/%s/%s", host, org, repo, info.repoSHA, resultsFile)
 	if err := writeToBlobStore(ctx, bucketURL, commitObjectPath, []byte(scorecardResult.Result)); err != nil {
-		return fmt.Errorf("%w: %v", errWritingBucket, err)
+		return fmt.Errorf("%w: %w", errWritingBucket, err)
 	}
 	path = fmt.Sprintf("/projects/%s/%s/%s?commit=%s", host, org, repo, info.repoSHA)
 	if err := purger.Purge(ctx, path); err != nil {
@@ -213,7 +223,7 @@ func splitRepoName(path string) (org, repo string, ok bool) {
 // It verifies the branch is a default branch and gets the scorecard workflow from the repository
 // from the specific commit and verifies it to ensure that it hasn't been tampered with.
 func getAndVerifyWorkflowContent(ctx context.Context,
-	scorecardResult *models.VerifiedScorecardResult, info certInfo,
+	scorecardResult *models.VerifiedScorecardResult, info *certInfo,
 ) error {
 	// Get the corresponding GitHub repository.
 	httpClient := http.DefaultClient
@@ -226,7 +236,7 @@ func getAndVerifyWorkflowContent(ctx context.Context,
 	// Organization and repo of the project being analyzed
 	org, repo, ok := splitRepoName(info.repoFullName)
 	if !ok {
-		return fmt.Errorf("cert repository name is malformed")
+		return errMalformedCertRepo
 	}
 	repoClient, _, err := client.Repositories.Get(ctx, org, repo)
 	if err != nil {
@@ -243,7 +253,7 @@ func getAndVerifyWorkflowContent(ctx context.Context,
 	// Organization and repo of the (possibly) reusable workflow
 	workflowOrg, workflowRepo, path, ok := splitFullPath(info.workflowPath)
 	if !ok {
-		return fmt.Errorf("cert workflow path is malformed")
+		return errMalformedCertWorkflow
 	}
 	workflowRepoFullName := fullName(workflowOrg, workflowRepo)
 
@@ -381,7 +391,11 @@ func getUUIDsByPayload(ctx context.Context, payload []byte) ([]string, error) {
 	// as errRekorSearchUnavailable instead of letting the JSON decoder fail with an
 	// opaque "invalid character '<'" so callers can distinguish it from a real miss.
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if err != nil {
+			return nil, fmt.Errorf("%w: status %d (reading body: %w)", errRekorSearchUnavailable,
+				resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("%w: status %d: %s", errRekorSearchUnavailable,
 			resp.StatusCode, strings.TrimSpace(string(body)))
 	}
@@ -438,7 +452,7 @@ func getTLogEntryByUUID(ctx context.Context, uuid string) (*tlogEntry, error) {
 // tlog entry. It also ensures that the timestamp of the tlog entry  was signed by rekor public key.
 func verifyInclusionProof(uuid string, e *tlogEntry) error {
 	if e == nil || e.Verification == nil || e.Verification.InclusionProof == nil {
-		return fmt.Errorf("no inclusion proof provided")
+		return errNoInclusionProof
 	}
 	rootHash, err := hex.DecodeString(e.Verification.InclusionProof.RootHash)
 	if err != nil {
@@ -450,7 +464,7 @@ func verifyInclusionProof(uuid string, e *tlogEntry) error {
 		return fmt.Errorf("error decoding hex encoded leaf hash: %w", err)
 	}
 	if len(leafHash) < 32 {
-		return fmt.Errorf("leafHash has unexpected size %d, want 32", len(leafHash))
+		return fmt.Errorf("%w: %d, want 32", errInvalidLeafHashSize, len(leafHash))
 	}
 	if len(leafHash) > 32 {
 		leafHash = leafHash[len(leafHash)-32:]
@@ -474,7 +488,7 @@ func verifyInclusionProof(uuid string, e *tlogEntry) error {
 	// Verify the SignedEntryTimestamp against Rekor's pub key.
 	derBytes, _ := pem.Decode(rekorPub)
 	if derBytes == nil {
-		return errors.New("PEM decoding failed")
+		return errPEMDecodeFailed
 	}
 	rekorPubKey, err := x509.ParsePKIXPublicKey(derBytes.Bytes)
 	if err != nil {
@@ -482,7 +496,7 @@ func verifyInclusionProof(uuid string, e *tlogEntry) error {
 	}
 	rekorECDSA, ok := rekorPubKey.(*ecdsa.PublicKey)
 	if !ok {
-		return errors.New("public key retrieved from Rekor is not an ECDSA key")
+		return errNotECDSAKey
 	}
 
 	payload := struct {
@@ -506,7 +520,7 @@ func verifyInclusionProof(uuid string, e *tlogEntry) error {
 	}
 	hash := sha256.Sum256(jsonCanonicalized)
 	if !ecdsa.VerifyASN1(rekorECDSA, hash[:], e.Verification.SignedEntryTimestamp) {
-		return fmt.Errorf("unable to verify")
+		return errUnableToVerify
 	}
 	return nil
 }
@@ -538,12 +552,12 @@ func verifyCert(cert *x509.Certificate, integratedTime time.Time) error {
 
 	// Verify that cert isn't expired.
 	if cert.NotAfter.Before(integratedTime) {
-		return fmt.Errorf("certificate expired before signatures were entered in log: %s is before %s",
-			cert.NotAfter, integratedTime)
+		return fmt.Errorf("%w: %s is before %s",
+			errCertExpiredBeforeLog, cert.NotAfter, integratedTime)
 	}
 	if cert.NotBefore.After(integratedTime) {
-		return fmt.Errorf("certificate was issued after signatures were entered in log: %s is after %s",
-			cert.NotAfter, integratedTime)
+		return fmt.Errorf("%w: %s is after %s",
+			errCertIssuedAfterLog, cert.NotBefore, integratedTime)
 	}
 	return nil
 }
@@ -600,7 +614,7 @@ func getCertPool(cert []byte) (*x509.CertPool, error) {
 	pool := x509.NewCertPool()
 
 	if ok := pool.AppendCertsFromPEM(cert); !ok {
-		return nil, fmt.Errorf("unmarshalling PEM certificate")
+		return nil, errUnmarshallingPEMCert
 	}
 	return pool, nil
 }

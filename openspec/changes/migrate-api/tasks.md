@@ -861,6 +861,8 @@ selected the wrong thing.
 - [ ] 7.3 Remove the Go CI: `main.yml`, `cifuzz.yml`, the Go half of the CodeQL
       matrix, and the gomod and docker Dependabot entries.
 - [ ] 7.4 Trim `docs/dns.md` to the site half (**W6**).
+- [x] 7.4a Rewrite this repository's `docs/dns.md` to describe the Netlify DNS
+      delegation and Fastly + AWS serving setup (fixes #75).
 - [ ] 7.5 Rewrite `README.md` to describe a website-only repository, with a
       pointer to the API's new home.
 - [ ] 7.6 Update `.github/CODEOWNERS` and any issue or PR templates that route
